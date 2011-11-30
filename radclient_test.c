@@ -23,17 +23,26 @@ static int getport(const char *name)
 
 int main(int argc, char *argv[])
 {
-	RADIUS_PACKET *request;
-	VALUE_PAIR *vp;
-	fr_packet_list_t *pl;
-	fr_ipaddr_t client;
-
 	char username[32], password[32];
 
-	int rc = -1;
-
 	fprintf(stdout, "<user> <pw>: ");
-	fscanf(stdin, "%s %s", &username, &password);
+	fscanf(stdin, "%31s %31s", &username, &password);
+
+	return rad_auth(username, password);
+}
+
+int rad_auth(const char *username, const char *password)
+{
+	struct timeval tv;
+	volatile int max_fd;
+	fd_set set;
+
+	fr_ipaddr_t client;
+	fr_packet_list_t *pl;
+	VALUE_PAIR *vp;
+	RADIUS_PACKET *request = 0, *reply = 0;
+
+	int rc = -1;
 
 	/* if (dict_init(RADDBDIR, RADIUS_DICTIONARY) < 0) { */
 	if (dict_init(".", RADIUS_DICTIONARY) < 0) {
@@ -114,11 +123,6 @@ int main(int argc, char *argv[])
 
 	/* GESENDET! :-) */
 
-	fd_set		set;
-	struct timeval  tv;
-	RADIUS_PACKET	*reply, **request_p;
-	volatile int max_fd;
-
 	/* And wait for reply, timing out as necessary */
 	FD_ZERO(&set);
 
@@ -128,7 +132,9 @@ int main(int argc, char *argv[])
 		goto done;
 	}
 
-	tv.tv_sec = 3;
+	/* wait 1.5 seconds */
+	tv.tv_sec = 1;
+	tv.tv_usec = 500;
 
 	if (select(max_fd, &set, NULL, NULL, &tv) <= 0) {
 		fprintf(stderr, "no packet received!\n");
@@ -165,8 +171,10 @@ int main(int argc, char *argv[])
 		rc = 1;
 
 	done:
-	rad_free(&request);
-	rad_free(&reply);
+	if(request)
+		rad_free(&request);
+	if(reply)
+		rad_free(&reply);
 
 	return rc;
 }
