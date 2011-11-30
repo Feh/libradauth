@@ -25,8 +25,13 @@ int main(int argc, char *argv[])
 {
 	char username[32], password[32];
 
-	fprintf(stdout, "<user> <pw>: ");
-	fscanf(stdin, "%31s %31s", &username, &password);
+	if(argc != 3) {
+		fprintf(stdout, "<user> <pw>: ");
+		fscanf(stdin, "%31s %31s", &username, &password);
+	} else {
+		strncpy(username, argv[1], 31);
+		strncpy(password, argv[2], 31);
+	}
 
 	return rad_auth(username, password);
 }
