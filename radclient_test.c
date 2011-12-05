@@ -180,6 +180,8 @@ int rad_auth(const char *username, const char *password)
 		rad_free(&request);
 	if(reply)
 		rad_free(&reply);
+	if(pl)
+		fr_packet_list_free(pl);
 
 	return rc;
 }
