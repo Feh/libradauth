@@ -1,0 +1,6 @@
+# The following format is supported, separator are tabs and/or spaces
+# server1       port1   secret1 CHAP
+# server2       port2   secret2 PAP
+# ...
+
+localhost       1812    0.0.0.0         v3rYs3cr1t      CHAP

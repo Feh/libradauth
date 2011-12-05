@@ -12,6 +12,7 @@ struct rad_server;
 struct rad_server {
 	char host[64];
 	int port;
+	char bind[64];
 	char secret[64];
 	enum { PAP, CHAP } method;
 	struct rad_server *next;
@@ -75,7 +76,7 @@ static struct rad_server *parse_one_server(char *buf)
 	if(!s)
 		return NULL;
 
-	/* Format: "host port secret {pap,chap}\n" */
+	/* Format: "host port bind secret {pap,chap}\n" */
 	if(!(t = strtok(buf, delim)))
 		return NULL;
 	strlcpy(s->host, t, 64);
@@ -83,6 +84,10 @@ static struct rad_server *parse_one_server(char *buf)
 	if(!(t = strtok(NULL, delim)))
 		return NULL;
 	s->port = atoi(t);
+
+	if(!(t = strtok(NULL, delim)))
+		return NULL;
+	strlcpy(s->bind, t, 64);
 
 	if(!(t = strtok(NULL, delim)))
 		return NULL;
@@ -112,13 +117,13 @@ static void free_server_list(struct rad_server *head)
 	} while(cur);
 }
 
-static int dst_ipaddr_from_server(struct in_addr *addr, struct rad_server *server)
+static int ipaddr_from_server(struct in_addr *addr, const char *host)
 {
 	struct hostent *res;
 
-	if(!(res = gethostbyname(server->host))) {
+	if(!(res = gethostbyname(host))) {
 #ifdef DEBUG
-		fprintf(stderr, "Failed to resolve host (h_errno = %d)\n");
+		fprintf(stderr, "Failed to resolve host '%s'.\n", host);
 #endif
 		return 0;
 	}
@@ -200,14 +205,14 @@ int rad_auth(const char *username, const char *password,
 
 	request->dst_ipaddr.af = AF_INET;
 	request->dst_port = server->port;
-	if(!dst_ipaddr_from_server(
-		&(request->dst_ipaddr.ipaddr.ip4addr), server))
+	if(!ipaddr_from_server(
+		&(request->dst_ipaddr.ipaddr.ip4addr), server->host))
 		goto done;
 
-	/* bind to 0.0.0.0 */
 	memset(&client, 0, sizeof(client));
 	client.af = AF_INET;
-	client.ipaddr.ip4addr.s_addr = inet_addr("0.0.0.0");
+	if(!ipaddr_from_server(&(client.ipaddr.ip4addr), server->bind))
+		goto done;
 
 	/* int sockfd = fr_socket(&request->dst_ipaddr, 0); */
 	int sockfd = fr_socket(&client, 0);
