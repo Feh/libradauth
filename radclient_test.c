@@ -35,6 +35,9 @@ static struct rad_server *parse_servers(const char *config)
 		return NULL;
 	while(fgets(buf, 511, fp) != NULL) {
 		n++;
+		/* skip comments and empty lines */
+		if(buf[0] == '\n' || buf[0] == '#')
+			continue;
 		tmp = parse_one_server(buf);
 		if(!tmp) {
 #ifdef DEBUG
