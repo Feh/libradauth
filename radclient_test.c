@@ -8,18 +8,122 @@
 
 #define strlcpy(A,B,C) strncpy(A,B,C), *(A+(C)-1)='\0'
 
-#define RADIUS_SECRET "Foobarbaz"
+struct rad_server;
+struct rad_server {
+	char host[64];
+	int port;
+	char secret[64];
+	enum { PAP, CHAP } method;
+	struct rad_server *next;
+};
 
-static int getport(const char *name)
+static struct rad_server *parse_one_server(char *buf);
+static struct rad_server *parse_servers(const char *config);
+int rad_auth(const char *username, const char *password,
+		const char *host, const char *config);
+
+static struct rad_server *parse_servers(const char *config)
 {
-	struct servent *svp;
+	FILE *fp;
+	int n = 0;
+	char buf[512];
+	struct rad_server *tmp, *cur, *head;
 
-	svp = getservbyname (name, "udp");
-	if (!svp)
-		return 0;
+	head = NULL;
 
-	return ntohs(svp->s_port);
+	if((fp = fopen(config, "r")) == NULL)
+		return NULL;
+	while(fgets(buf, 511, fp) != NULL) {
+		n++;
+		tmp = parse_one_server(buf);
+		if(!tmp) {
+#ifdef DEBUG
+			fprintf(stderr, "Error in %s, line %d. Skipping!\n",
+				config, n);
+#endif
+			continue;
+		}
+		if(!head)
+			cur = head = tmp;
+		else {
+			cur->next = tmp;
+			cur = tmp;
+		}
+#ifdef DEBUG
+		fprintf(stderr, "adding: %s:%d (%s) %s\n",
+			cur->host, cur->port,
+			cur->method == CHAP ? "CHAP" : "PAP",
+			cur->secret);
+#endif
+	}
+
+	fclose(fp);
+
+	return head;
 }
+
+static struct rad_server *parse_one_server(char *buf)
+{
+	struct rad_server *s;
+	const char delim[4] = " \t\n";
+	char *t;
+
+	s = malloc(sizeof(*s));
+	if(!s)
+		return NULL;
+
+	/* Format: "host port secret {pap,chap}\n" */
+	if(!(t = strtok(buf, delim)))
+		return NULL;
+	strlcpy(s->host, t, 64);
+
+	if(!(t = strtok(NULL, delim)))
+		return NULL;
+	s->port = atoi(t);
+
+	if(!(t = strtok(NULL, delim)))
+		return NULL;
+	strlcpy(s->secret, t, 64);
+
+	if(!(t = strtok(NULL, delim)))
+		return NULL;
+	if(!strncasecmp(t, "CHAP", 4))
+		s->method = CHAP;
+	else if(!strncasecmp(t, "PAP", 3))
+		s->method = PAP;
+	else
+		return NULL;
+
+	s->next = NULL;
+	return s;
+}
+
+static void free_server_list(struct rad_server *head)
+{
+	struct rad_server *cur, *tmp;
+	cur = head;
+	do {
+		tmp = cur->next;
+		free(cur);
+		cur = tmp;
+	} while(cur);
+}
+
+static int dst_ipaddr_from_server(struct in_addr *addr, struct rad_server *server)
+{
+	struct hostent *res;
+
+	if(!(res = gethostbyname(server->host))) {
+#ifdef DEBUG
+		fprintf(stderr, "Failed to resolve host (h_errno = %d)\n");
+#endif
+		return 0;
+	}
+
+	addr->s_addr = ((struct in_addr*) res->h_addr_list[0])->s_addr;
+	return 1;
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -33,10 +137,11 @@ int main(int argc, char *argv[])
 		strncpy(password, argv[2], 31);
 	}
 
-	return rad_auth(username, password);
+	return rad_auth(username, password, "localhost", "servers");
 }
 
-int rad_auth(const char *username, const char *password)
+int rad_auth(const char *username, const char *password,
+		const char *host, const char *config)
 {
 	struct timeval tv;
 	volatile int max_fd;
@@ -47,6 +152,8 @@ int rad_auth(const char *username, const char *password)
 	VALUE_PAIR *vp;
 	RADIUS_PACKET *request = 0, *reply = 0;
 
+	struct rad_server *serverlist, *server;
+
 	int rc = -1;
 
 	/* if (dict_init(RADDBDIR, RADIUS_DICTIONARY) < 0) { */
@@ -55,6 +162,29 @@ int rad_auth(const char *username, const char *password)
 		rc = -1;
 		goto done;
 	}
+
+	serverlist = parse_servers(config);
+	if(!serverlist) {
+		rc = -1;
+		goto done;
+	}
+	server = serverlist;
+	do {
+		if(!strcasecmp(server->host, host))
+			break;
+		server = server->next;
+	} while(server);
+	if(!server) {
+#ifdef DEBUG
+		fprintf(stderr, "Error: '%s' not found in config file '%s'.\n",
+			host, "servers");
+#endif
+		rc = -1;
+		goto done;
+	}
+#ifdef DEBUG
+	fprintf(stderr, "Using server: %s:%d\n", server->host, server->port);
+#endif
 
 	request = rad_alloc(1);
 	if(!request) {
@@ -66,8 +196,10 @@ int rad_auth(const char *username, const char *password)
 	request->code = PW_AUTHENTICATION_REQUEST;
 
 	request->dst_ipaddr.af = AF_INET;
-	request->dst_ipaddr.ipaddr.ip4addr.s_addr = inet_addr("127.0.0.1");
-	request->dst_port = getport("radius");
+	request->dst_port = server->port;
+	if(!dst_ipaddr_from_server(
+		&(request->dst_ipaddr.ipaddr.ip4addr), server))
+		goto done;
 
 	/* bind to 0.0.0.0 */
 	memset(&client, 0, sizeof(client));
@@ -120,7 +252,7 @@ int rad_auth(const char *username, const char *password)
 		vp->length = 17;
 	}
 
-	if(rad_send(request, NULL, RADIUS_SECRET) == -1) {
+	if(rad_send(request, NULL, server->secret) == -1) {
 		fr_perror("rad_send");
 		rc = -1;
 		goto done;
@@ -155,7 +287,7 @@ int rad_auth(const char *username, const char *password)
 		goto done;
 	}
 
-	if (rad_verify(reply, request, RADIUS_SECRET) < 0) {
+	if (rad_verify(reply, request, server->secret) < 0) {
 		fr_perror("rad_verify");
 		rc = -1;
 		goto done;
@@ -163,7 +295,7 @@ int rad_auth(const char *username, const char *password)
 
 	fr_packet_list_yank(pl, request);
 
-	if (rad_decode(reply, request, RADIUS_SECRET) != 0) {
+	if (rad_decode(reply, request, server->secret) != 0) {
 		fr_perror("rad_decode");
 		rc = -1;
 		goto done;
