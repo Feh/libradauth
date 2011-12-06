@@ -156,7 +156,7 @@ int rad_auth(const char *username, const char *password,
 	fd_set set;
 
 	fr_ipaddr_t client;
-	fr_packet_list_t *pl;
+	fr_packet_list_t *pl = 0;
 	VALUE_PAIR *vp;
 	RADIUS_PACKET *request = 0, *reply = 0;
 
