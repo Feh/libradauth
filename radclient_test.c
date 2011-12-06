@@ -326,28 +326,32 @@ int rad_auth(const char *username, const char *password,
 		goto done;
 	}
 
-	/* construct value pairs */
-	vp = pairmake("User-Name", username, 0);
-	pairadd(&request->vps, vp);
-	vp = pairmake("CHAP-Password", password, 0);
-	pairadd(&request->vps, vp);
-	/* request->vps = readvp2(stdin, &done, "readvp2"); */
-
 	if(fr_packet_list_id_alloc(pl, request) < 0) {
 		debug_fr_error("fr_packet_list_id_alloc");
 		rc = -1;
 		goto done;
 	}
 
-	debug("CHAP-encoding the password...\n");
-	if ((vp = pairfind(request->vps, PW_CHAP_PASSWORD)) != NULL) {
+	/* construct value pairs */
+	vp = pairmake("User-Name", username, 0);
+	pairadd(&request->vps, vp);
+
+	if(server->method == PAP) {
+		debug("Using PAP-scrambled passwords\n");
+		/* encryption of the packet will happen *automatically* just
+		 * before sending the packet via make_passwd() */
+		vp = pairmake("User-Password", password, 0);
+		vp->flags.encrypt = FLAG_ENCRYPT_USER_PASSWORD;
+	} else if(server->method == CHAP) {
+		debug("Using CHAP-scrambled passwords\n");
+		vp = pairmake("CHAP-Password", password, 0);
 		strlcpy(vp->vp_strvalue, password,
 			sizeof(vp->vp_strvalue));
 		vp->length = strlen(vp->vp_strvalue);
-
 		rad_chap_encode(request, vp->vp_octets, request->id, vp);
 		vp->length = 17;
 	}
+	pairadd(&request->vps, vp); /* the password */
 
 	debug("Seding packet...\n");
 	if(rad_send(request, NULL, server->secret) == -1) {
