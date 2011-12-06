@@ -13,8 +13,10 @@
 #ifdef DEBUG
 #define debug(fmt, ...) \
         fprintf(stderr, LIBNAME fmt, ##__VA_ARGS__)
+#define debug_fr_error(what) debug(what ": ERROR: %s\n", fr_strerror())
 #else
 #define debug(fmt, ...)
+#define debug_fr_error(what)
 #endif
 
 struct rad_server;
@@ -247,7 +249,7 @@ int rad_auth(const char *username, const char *password,
 
 	/* if (dict_init(RADDBDIR, RADIUS_DICTIONARY) < 0) { */
 	if (dict_init(".", RADIUS_DICTIONARY) < 0) {
-		fr_perror("dict_init");
+		debug_fr_error("dict_init");
 		rc = -1;
 		goto done;
 	}
@@ -274,7 +276,7 @@ int rad_auth(const char *username, const char *password,
 
 	request = rad_alloc(1);
 	if(!request) {
-		fr_perror("foo");
+		debug_fr_error("foo");
 		rc = -1;
 		goto done;
 	}
@@ -295,7 +297,7 @@ int rad_auth(const char *username, const char *password,
 	/* int sockfd = fr_socket(&request->dst_ipaddr, 0); */
 	int sockfd = fr_socket(&client, 0);
 	if(!sockfd) {
-		fr_perror("fr_socket");
+		debug_fr_error("fr_socket");
 		rc = -1;
 		goto done;
 	}
@@ -305,13 +307,13 @@ int rad_auth(const char *username, const char *password,
 
 	pl = fr_packet_list_create(1);
 	if(!pl) {
-		fr_perror("fr_packet_list_create");
+		debug_fr_error("fr_packet_list_create");
 		rc = -1;
 		goto done;
 	}
 
 	if(!fr_packet_list_socket_add(pl, sockfd)) {
-		fr_perror("fr_packet_list_socket_add");
+		debug_fr_error("fr_packet_list_socket_add");
 		rc = -1;
 		goto done;
 	}
@@ -324,7 +326,7 @@ int rad_auth(const char *username, const char *password,
 	/* request->vps = readvp2(stdin, &done, "readvp2"); */
 
 	if(fr_packet_list_id_alloc(pl, request) < 0) {
-		fr_perror("fr_packet_list_id_alloc");
+		debug_fr_error("fr_packet_list_id_alloc");
 		rc = -1;
 		goto done;
 	}
@@ -339,7 +341,7 @@ int rad_auth(const char *username, const char *password,
 	}
 
 	if(rad_send(request, NULL, server->secret) == -1) {
-		fr_perror("rad_send");
+		debug_fr_error("rad_send");
 		rc = -1;
 		goto done;
 	}
@@ -374,7 +376,7 @@ int rad_auth(const char *username, const char *password,
 	}
 
 	if (rad_verify(reply, request, server->secret) < 0) {
-		fr_perror("rad_verify");
+		debug_fr_error("rad_verify");
 		rc = -1;
 		goto done;
 	}
@@ -382,7 +384,7 @@ int rad_auth(const char *username, const char *password,
 	fr_packet_list_yank(pl, request);
 
 	if (rad_decode(reply, request, server->secret) != 0) {
-		fr_perror("rad_decode");
+		debug_fr_error("rad_decode");
 		rc = -1;
 		goto done;
 	}
