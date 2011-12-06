@@ -25,6 +25,9 @@ static struct rad_server *parse_one_server(char *buf);
 static struct rad_server *parse_servers(const char *config);
 static void server_add_field(struct rad_server *s,
 	const char *k, const char *v);
+static void free_server_list(struct rad_server *head);
+static int ipaddr_from_server(struct in_addr *addr, const char *host);
+
 int rad_auth(const char *username, const char *password,
 		const char *host, const char *config);
 
