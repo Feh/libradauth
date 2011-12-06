@@ -23,6 +23,8 @@ struct rad_server {
 
 static struct rad_server *parse_one_server(char *buf);
 static struct rad_server *parse_servers(const char *config);
+static void server_add_field(struct rad_server *s,
+	const char *k, const char *v);
 int rad_auth(const char *username, const char *password,
 		const char *host, const char *config);
 
@@ -146,28 +148,7 @@ static struct rad_server *parse_one_server(char *buf)
 	while((t = strtok(NULL, delim)) && *t != '}') {
 		strlcpy(token, t, 64);
 		v = strtok(NULL, delim);
-		if(!strcmp(token, "host"))
-			strlcpy(s->host, v, sizeof(s->host));
-		else if(!strcmp(token, "bind"))
-			strlcpy(s->bind, v, sizeof(s->bind));
-		else if(!strcmp(token, "secret"))
-			strlcpy(s->secret, v, sizeof(s->secret));
-		else if(!strcmp(token, "port"))
-			s->port = atoi(v);
-		else if(!strcmp(token, "priority"))
-			s->port = atoi(v);
-		else if(!strcmp(token, "method")) {
-			if(!strcasecmp(v, "CHAP"))
-				s->method = CHAP;
-			else if(!strcasecmp(v, "PAP"))
-				s->method = PAP;
-			else
-				return NULL;
-		} else {
-#ifdef DEBUG
-			fprintf(stderr, "wrong key: %s = %s\n", token, v);
-#endif
-		}
+		server_add_field(s, token, v);
 	}
 
 	if(!*(s->host) || s->method == NONE) {
@@ -181,6 +162,30 @@ static struct rad_server *parse_one_server(char *buf)
 
 	s->next = NULL;
 	return s;
+}
+
+static void server_add_field(struct rad_server *s, const char *k, const char *v)
+{
+	if(!strcmp(k, "host"))
+		strlcpy(s->host, v, sizeof(s->host));
+	else if(!strcmp(k, "bind"))
+		strlcpy(s->bind, v, sizeof(s->bind));
+	else if(!strcmp(k, "secret"))
+		strlcpy(s->secret, v, sizeof(s->secret));
+	else if(!strcmp(k, "port"))
+		s->port = atoi(v);
+	else if(!strcmp(k, "priority"))
+		s->priority = atoi(v);
+	else if(!strcmp(k, "method")) {
+		if(!strcasecmp(v, "CHAP"))
+			s->method = CHAP;
+		else if(!strcasecmp(v, "PAP"))
+			s->method = PAP;
+	} else {
+#ifdef DEBUG
+		fprintf(stderr, "wrong key: %s = %s\n", k, v);
+#endif
+	}
 }
 
 static void free_server_list(struct rad_server *head)
