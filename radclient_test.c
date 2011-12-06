@@ -14,6 +14,7 @@ struct rad_server {
 	char name[64];
 	char host[64];
 	int port;
+	int priority;
 	char bind[64];
 	char secret[64];
 	enum { NONE, PAP, CHAP } method;
@@ -149,6 +150,7 @@ static struct rad_server *parse_one_server(char *buf)
 	*(s->host) = '\0';
 	*(s->secret) = '\0';
 	s->port = 1812;
+	s->priority = 0;
 	s->method = NONE;
 	strcpy(s->bind, "0.0.0.0");
 
@@ -167,6 +169,8 @@ static struct rad_server *parse_one_server(char *buf)
 		else if(!strcmp(token, "secret"))
 			strlcpy(s->secret, v, sizeof(s->secret));
 		else if(!strcmp(token, "port"))
+			s->port = atoi(v);
+		else if(!strcmp(token, "priority"))
 			s->port = atoi(v);
 		else if(!strcmp(token, "method")) {
 			if(!strcasecmp(v, "CHAP"))
