@@ -23,7 +23,6 @@ struct rad_server {
 
 static struct rad_server *parse_one_server(char *buf);
 static struct rad_server *parse_servers(const char *config);
-static int find_statement(char *buf);
 int rad_auth(const char *username, const char *password,
 		const char *host, const char *config);
 
@@ -58,10 +57,7 @@ static struct rad_server *parse_servers(const char *config)
 		if(buf[0] == '\n' || buf[0] == '#')
 			continue;
 
-		if(!s_len) {
-			if(!find_statement(buf))
-				continue;
-		} else if(s_len + b_len + 1 > s_size) {
+		if(s_len + b_len + 1 > s_size) {
 			s_size += BUFSIZE;
 			stm = realloc(stm, s_size);
 			if(!stm)
@@ -112,21 +108,6 @@ static struct rad_server *parse_servers(const char *config)
 	return head;
 }
 
-/* find "foobar {" part */
-static int find_statement(char *buf)
-{
-	const char delim[4] = " \t\n";
-	char tmp[BUFSIZE];
-	char *t;
-	strlcpy(tmp, buf, BUFSIZE);
-	t = strtok(tmp, delim);
-	if(!t) /* no statement */
-		return 0;
-	if((t = strtok(NULL, delim)) && *t == '{')
-		return 1;
-	return 0;
-}
-
 static struct rad_server *parse_one_server(char *buf)
 {
 	struct rad_server *s;
@@ -155,6 +136,9 @@ static struct rad_server *parse_one_server(char *buf)
 	strcpy(s->bind, "0.0.0.0");
 
 	if(!(t = strtok(NULL, delim)) || *t != '{') {
+#ifdef DEBUG
+		fprintf(stderr, "could not find '{' after statement name!\n");
+#endif
 		free(s);
 		return NULL;
 	}
