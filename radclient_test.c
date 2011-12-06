@@ -9,6 +9,14 @@
 #define strlcpy(A,B,C) strncpy(A,B,C), *(A+(C)-1)='\0'
 #define BUFSIZE 1024
 
+#define LIBNAME "[libradclient] "
+#ifdef DEBUG
+#define debug(fmt, ...) \
+        fprintf(stderr, LIBNAME fmt, ##__VA_ARGS__)
+#else
+#define debug(fmt, ...)
+#endif
+
 struct rad_server;
 struct rad_server {
 	char name[64];
@@ -94,18 +102,14 @@ static struct rad_server *parse_servers(const char *config)
 			cur->next = tmp;
 			cur = tmp;
 		}
-#ifdef DEBUG
-		fprintf(stderr, "adding: %s:%d (%s) %s\n",
+		debug("adding: %s:%d (%s) %s\n",
 			cur->host, cur->port,
 			cur->method == CHAP ? "CHAP" : "PAP",
 			cur->secret);
-#endif
 	}
 
-#ifdef DEBUG
 	if(s_len > 0)
-		fprintf(stderr, "reached EOF, could not find closing '}'!\n");
-#endif
+		debug("reached EOF, could not find closing '}'!\n");
 
 	free(stm);
 	fclose(fp);
@@ -141,9 +145,7 @@ static struct rad_server *parse_one_server(char *buf)
 	strcpy(s->bind, "0.0.0.0");
 
 	if(!(t = strtok(NULL, delim)) || *t != '{') {
-#ifdef DEBUG
-		fprintf(stderr, "could not find '{' after statement name!\n");
-#endif
+		debug("could not find '{' after statement name!\n");
 		free(s);
 		return NULL;
 	}
@@ -155,10 +157,8 @@ static struct rad_server *parse_one_server(char *buf)
 	}
 
 	if(!*(s->host) || s->method == NONE) {
-#ifdef DEBUG
-		fprintf(stderr, "%s: error in format: "
+		debug("%s: error in format: "
 			"host or method missing\n", s->name);
-#endif
 		free(s);
 		return NULL;
 	}
@@ -185,9 +185,7 @@ static void server_add_field(struct rad_server *s, const char *k, const char *v)
 		else if(!strcasecmp(v, "PAP"))
 			s->method = PAP;
 	} else {
-#ifdef DEBUG
-		fprintf(stderr, "wrong key: %s = %s\n", k, v);
-#endif
+		debug("wrong key: %s = %s\n", k, v);
 	}
 }
 
@@ -207,9 +205,7 @@ static int ipaddr_from_server(struct in_addr *addr, const char *host)
 	struct hostent *res;
 
 	if(!(res = gethostbyname(host))) {
-#ifdef DEBUG
-		fprintf(stderr, "Failed to resolve host '%s'.\n", host);
-#endif
+		debug("Failed to resolve host '%s'.\n", host);
 		return 0;
 	}
 
@@ -269,16 +265,12 @@ int rad_auth(const char *username, const char *password,
 		server = server->next;
 	} while(server);
 	if(!server) {
-#ifdef DEBUG
-		fprintf(stderr, "Error: '%s' not found in config file '%s'.\n",
+		debug("Error: '%s' not found in config file '%s'.\n",
 			servername, "servers");
-#endif
 		rc = -1;
 		goto done;
 	}
-#ifdef DEBUG
-	fprintf(stderr, "Using server: %s:%d\n", server->name, server->port);
-#endif
+	debug("Using server: %s:%d\n", server->name, server->port);
 
 	request = rad_alloc(1);
 	if(!request) {
