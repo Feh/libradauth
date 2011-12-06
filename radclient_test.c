@@ -7,46 +7,87 @@
 #include <conf.h>
 
 #define strlcpy(A,B,C) strncpy(A,B,C), *(A+(C)-1)='\0'
+#define BUFSIZE 1024
 
 struct rad_server;
 struct rad_server {
+	char name[64];
 	char host[64];
 	int port;
+	int priority;
 	char bind[64];
 	char secret[64];
-	enum { PAP, CHAP } method;
+	enum { NONE, PAP, CHAP } method;
 	struct rad_server *next;
 };
 
 static struct rad_server *parse_one_server(char *buf);
 static struct rad_server *parse_servers(const char *config);
+static void server_add_field(struct rad_server *s,
+	const char *k, const char *v);
+static void free_server_list(struct rad_server *head);
+static int ipaddr_from_server(struct in_addr *addr, const char *host);
+
 int rad_auth(const char *username, const char *password,
 		const char *host, const char *config);
 
 static struct rad_server *parse_servers(const char *config)
 {
 	FILE *fp;
+	char buf[BUFSIZE];
 	int n = 0;
-	char buf[512];
+	char *stm;
+	char *brace;
+	int s_len, s_size;
+	int b_len = 0;
 	struct rad_server *tmp, *cur, *head;
 
 	head = NULL;
 
 	if((fp = fopen(config, "r")) == NULL)
 		return NULL;
-	while(fgets(buf, 511, fp) != NULL) {
+
+	stm = malloc(BUFSIZE * sizeof(char));
+	if(stm == 0)
+		return NULL;
+	s_size = BUFSIZE;
+
+	*stm = '\0';
+	s_len = 0;
+	while(fgets(buf, BUFSIZE-1, fp) != NULL) {
 		n++;
+		b_len = strlen(buf);
+
 		/* skip comments and empty lines */
 		if(buf[0] == '\n' || buf[0] == '#')
 			continue;
-		tmp = parse_one_server(buf);
-		if(!tmp) {
-#ifdef DEBUG
-			fprintf(stderr, "Error in %s, line %d. Skipping!\n",
-				config, n);
-#endif
-			continue;
+
+		if(s_len + b_len + 1 > s_size) {
+			s_size += BUFSIZE;
+			stm = realloc(stm, s_size);
+			if(!stm)
+				return NULL;
 		}
+
+		brace = strrchr(buf, '}');
+		if(brace && (brace == buf ||
+				*(brace-1) == ' ' && *(brace-1) == '\t')) {
+			*(brace+1) = '\0'; /* statement terminated */
+			strncat(stm, buf, b_len);
+			s_len += buf - brace + 1;
+		} else {
+			strncat(stm, buf, b_len);
+			s_len += b_len;
+			continue; /* next line! */
+		}
+
+		tmp = parse_one_server(stm);
+		s_len = 0;
+		*stm = '\0';
+
+		if(!tmp)
+			continue;
+
 		if(!head)
 			cur = head = tmp;
 		else {
@@ -61,6 +102,12 @@ static struct rad_server *parse_servers(const char *config)
 #endif
 	}
 
+#ifdef DEBUG
+	if(s_len > 0)
+		fprintf(stderr, "reached EOF, could not find closing '}'!\n");
+#endif
+
+	free(stm);
 	fclose(fp);
 
 	return head;
@@ -70,40 +117,78 @@ static struct rad_server *parse_one_server(char *buf)
 {
 	struct rad_server *s;
 	const char delim[4] = " \t\n";
-	char *t;
+	char *t, *v;
+	char token[64];
 
 	s = malloc(sizeof(*s));
-	if(!s)
+	if(!s) {
+		free(s);
 		return NULL;
+	}
 
-	/* Format: "host port bind secret {pap,chap}\n" */
-	if(!(t = strtok(buf, delim)))
+	if(!(t = strtok(buf, delim))) {
+		free(s);
 		return NULL;
-	strlcpy(s->host, t, 64);
+	}
+	strlcpy(s->name, t, 64);
 
-	if(!(t = strtok(NULL, delim)))
-		return NULL;
-	s->port = atoi(t);
+	/* fill with defaults */
+	*(s->host) = '\0';
+	*(s->secret) = '\0';
+	s->port = 1812;
+	s->priority = 0;
+	s->method = NONE;
+	strcpy(s->bind, "0.0.0.0");
 
-	if(!(t = strtok(NULL, delim)))
+	if(!(t = strtok(NULL, delim)) || *t != '{') {
+#ifdef DEBUG
+		fprintf(stderr, "could not find '{' after statement name!\n");
+#endif
+		free(s);
 		return NULL;
-	strlcpy(s->bind, t, 64);
+	}
 
-	if(!(t = strtok(NULL, delim)))
-		return NULL;
-	strlcpy(s->secret, t, 64);
+	while((t = strtok(NULL, delim)) && *t != '}') {
+		strlcpy(token, t, 64);
+		v = strtok(NULL, delim);
+		server_add_field(s, token, v);
+	}
 
-	if(!(t = strtok(NULL, delim)))
+	if(!*(s->host) || s->method == NONE) {
+#ifdef DEBUG
+		fprintf(stderr, "%s: error in format: "
+			"host or method missing\n", s->name);
+#endif
+		free(s);
 		return NULL;
-	if(!strncasecmp(t, "CHAP", 4))
-		s->method = CHAP;
-	else if(!strncasecmp(t, "PAP", 3))
-		s->method = PAP;
-	else
-		return NULL;
+	}
 
 	s->next = NULL;
 	return s;
+}
+
+static void server_add_field(struct rad_server *s, const char *k, const char *v)
+{
+	if(!strcmp(k, "host"))
+		strlcpy(s->host, v, sizeof(s->host));
+	else if(!strcmp(k, "bind"))
+		strlcpy(s->bind, v, sizeof(s->bind));
+	else if(!strcmp(k, "secret"))
+		strlcpy(s->secret, v, sizeof(s->secret));
+	else if(!strcmp(k, "port"))
+		s->port = atoi(v);
+	else if(!strcmp(k, "priority"))
+		s->priority = atoi(v);
+	else if(!strcmp(k, "method")) {
+		if(!strcasecmp(v, "CHAP"))
+			s->method = CHAP;
+		else if(!strcasecmp(v, "PAP"))
+			s->method = PAP;
+	} else {
+#ifdef DEBUG
+		fprintf(stderr, "wrong key: %s = %s\n", k, v);
+#endif
+	}
 }
 
 static void free_server_list(struct rad_server *head)
@@ -149,7 +234,7 @@ int main(int argc, char *argv[])
 }
 
 int rad_auth(const char *username, const char *password,
-		const char *host, const char *config)
+		const char *servername, const char *config)
 {
 	struct timeval tv;
 	volatile int max_fd;
@@ -173,25 +258,26 @@ int rad_auth(const char *username, const char *password,
 
 	serverlist = parse_servers(config);
 	if(!serverlist) {
+		printf("Could not parse servers!\n");
 		rc = -1;
 		goto done;
 	}
 	server = serverlist;
 	do {
-		if(!strcasecmp(server->host, host))
+		if(!strcasecmp(server->name, servername))
 			break;
 		server = server->next;
 	} while(server);
 	if(!server) {
 #ifdef DEBUG
 		fprintf(stderr, "Error: '%s' not found in config file '%s'.\n",
-			host, "servers");
+			servername, "servers");
 #endif
 		rc = -1;
 		goto done;
 	}
 #ifdef DEBUG
-	fprintf(stderr, "Using server: %s:%d\n", server->host, server->port);
+	fprintf(stderr, "Using server: %s:%d\n", server->name, server->port);
 #endif
 
 	request = rad_alloc(1);

@@ -1,6 +1,10 @@
-# The following format is supported, separator are tabs and/or spaces
-# server1       port1   secret1 CHAP
-# server2       port2   secret2 PAP
-# ...
+# The RADIUS servers to query
+# Note that the "host" and "method" arguments are mandatory!
 
-localhost       1812    0.0.0.0         v3rYs3cr1t      CHAP
+radius1 {
+        host    localhost
+        port    1812
+        bind    0.0.0.0
+        secret  v3rYs3cr1t
+        method  CHAP
+}
