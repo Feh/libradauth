@@ -242,7 +242,7 @@ int main(int argc, char *argv[])
 }
 
 int rad_auth(const char *username, const char *password,
-		const char *host, const char *config)
+		const char *servername, const char *config)
 {
 	struct timeval tv;
 	volatile int max_fd;
@@ -272,20 +272,20 @@ int rad_auth(const char *username, const char *password,
 	}
 	server = serverlist;
 	do {
-		if(!strcasecmp(server->host, host))
+		if(!strcasecmp(server->name, servername))
 			break;
 		server = server->next;
 	} while(server);
 	if(!server) {
 #ifdef DEBUG
 		fprintf(stderr, "Error: '%s' not found in config file '%s'.\n",
-			host, "servers");
+			servername, "servers");
 #endif
 		rc = -1;
 		goto done;
 	}
 #ifdef DEBUG
-	fprintf(stderr, "Using server: %s:%d\n", server->host, server->port);
+	fprintf(stderr, "Using server: %s:%d\n", server->name, server->port);
 #endif
 
 	request = rad_alloc(1);
