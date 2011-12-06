@@ -9,6 +9,16 @@
 #define strlcpy(A,B,C) strncpy(A,B,C), *(A+(C)-1)='\0'
 #define BUFSIZE 1024
 
+#define LIBNAME "[libradclient] "
+#ifdef DEBUG
+#define debug(fmt, ...) \
+        fprintf(stderr, LIBNAME fmt, ##__VA_ARGS__)
+#define debug_fr_error(what) debug(what ": ERROR: %s\n", fr_strerror())
+#else
+#define debug(fmt, ...)
+#define debug_fr_error(what)
+#endif
+
 struct rad_server;
 struct rad_server {
 	char name[64];
@@ -44,8 +54,10 @@ static struct rad_server *parse_servers(const char *config)
 
 	head = NULL;
 
-	if((fp = fopen(config, "r")) == NULL)
+	if((fp = fopen(config, "r")) == NULL) {
+		debug("Failed to open config file '%s'!\n", config);
 		return NULL;
+	}
 
 	stm = malloc(BUFSIZE * sizeof(char));
 	if(stm == 0)
@@ -63,6 +75,7 @@ static struct rad_server *parse_servers(const char *config)
 			continue;
 
 		if(s_len + b_len + 1 > s_size) {
+			debug("Resizing buffer to make the statement fit\n");
 			s_size += BUFSIZE;
 			stm = realloc(stm, s_size);
 			if(!stm)
@@ -94,18 +107,16 @@ static struct rad_server *parse_servers(const char *config)
 			cur->next = tmp;
 			cur = tmp;
 		}
-#ifdef DEBUG
-		fprintf(stderr, "adding: %s:%d (%s) %s\n",
+		debug("successfully added server: %s:%d (%s) %s\n",
 			cur->host, cur->port,
 			cur->method == CHAP ? "CHAP" : "PAP",
 			cur->secret);
-#endif
 	}
 
-#ifdef DEBUG
-	if(s_len > 0)
-		fprintf(stderr, "reached EOF, could not find closing '}'!\n");
-#endif
+	if(s_len > 0) {
+		debug("reached EOF, could not find closing '}'!\n");
+		debug("    (statement will be ignored)\n");
+	}
 
 	free(stm);
 	fclose(fp);
@@ -141,9 +152,7 @@ static struct rad_server *parse_one_server(char *buf)
 	strcpy(s->bind, "0.0.0.0");
 
 	if(!(t = strtok(NULL, delim)) || *t != '{') {
-#ifdef DEBUG
-		fprintf(stderr, "could not find '{' after statement name!\n");
-#endif
+		debug("could not find '{' after statement name!\n");
 		free(s);
 		return NULL;
 	}
@@ -155,10 +164,8 @@ static struct rad_server *parse_one_server(char *buf)
 	}
 
 	if(!*(s->host) || s->method == NONE) {
-#ifdef DEBUG
-		fprintf(stderr, "%s: error in format: "
-			"host or method missing\n", s->name);
-#endif
+		debug("%s: error in format: at least 'host' "
+			"or 'method' are missing!\n", s->name);
 		free(s);
 		return NULL;
 	}
@@ -185,9 +192,7 @@ static void server_add_field(struct rad_server *s, const char *k, const char *v)
 		else if(!strcasecmp(v, "PAP"))
 			s->method = PAP;
 	} else {
-#ifdef DEBUG
-		fprintf(stderr, "wrong key: %s = %s\n", k, v);
-#endif
+		debug("%s: wrong or unknown key: %s = %s\n", s->name, k, v);
 	}
 }
 
@@ -196,6 +201,7 @@ static void free_server_list(struct rad_server *head)
 	struct rad_server *cur, *tmp;
 	cur = head;
 	do {
+		debug("freeing server '%s'\n", cur->name);
 		tmp = cur->next;
 		free(cur);
 		cur = tmp;
@@ -207,13 +213,12 @@ static int ipaddr_from_server(struct in_addr *addr, const char *host)
 	struct hostent *res;
 
 	if(!(res = gethostbyname(host))) {
-#ifdef DEBUG
-		fprintf(stderr, "Failed to resolve host '%s'.\n", host);
-#endif
+		debug("Failed to resolve host '%s'.\n", host);
 		return 0;
 	}
 
 	addr->s_addr = ((struct in_addr*) res->h_addr_list[0])->s_addr;
+	debug("resolved '%s' to '%s'\n", host, inet_ntoa(*addr));
 	return 1;
 }
 
@@ -249,16 +254,17 @@ int rad_auth(const char *username, const char *password,
 
 	int rc = -1;
 
-	/* if (dict_init(RADDBDIR, RADIUS_DICTIONARY) < 0) { */
+	debug("initiating dictionary '%s'...\n", RADIUS_DICTIONARY);
 	if (dict_init(".", RADIUS_DICTIONARY) < 0) {
-		fr_perror("dict_init");
+		debug_fr_error("dict_init");
 		rc = -1;
 		goto done;
 	}
 
+	debug("parsing servers from config file '%s'\n", config);
 	serverlist = parse_servers(config);
 	if(!serverlist) {
-		printf("Could not parse servers!\n");
+		debug("Could not parse servers, bailing!\n");
 		rc = -1;
 		goto done;
 	}
@@ -269,20 +275,16 @@ int rad_auth(const char *username, const char *password,
 		server = server->next;
 	} while(server);
 	if(!server) {
-#ifdef DEBUG
-		fprintf(stderr, "Error: '%s' not found in config file '%s'.\n",
-			servername, "servers");
-#endif
+		debug("ERROR: server '%s' not found in config file '%s'.\n",
+			servername, config);
 		rc = -1;
 		goto done;
 	}
-#ifdef DEBUG
-	fprintf(stderr, "Using server: %s:%d\n", server->name, server->port);
-#endif
+	debug("Will query server: %s:%d\n", server->name, server->port);
 
 	request = rad_alloc(1);
 	if(!request) {
-		fr_perror("foo");
+		debug_fr_error("rad_alloc");
 		rc = -1;
 		goto done;
 	}
@@ -303,7 +305,7 @@ int rad_auth(const char *username, const char *password,
 	/* int sockfd = fr_socket(&request->dst_ipaddr, 0); */
 	int sockfd = fr_socket(&client, 0);
 	if(!sockfd) {
-		fr_perror("fr_socket");
+		debug_fr_error("fr_socket");
 		rc = -1;
 		goto done;
 	}
@@ -313,13 +315,13 @@ int rad_auth(const char *username, const char *password,
 
 	pl = fr_packet_list_create(1);
 	if(!pl) {
-		fr_perror("fr_packet_list_create");
+		debug_fr_error("fr_packet_list_create");
 		rc = -1;
 		goto done;
 	}
 
 	if(!fr_packet_list_socket_add(pl, sockfd)) {
-		fr_perror("fr_packet_list_socket_add");
+		debug_fr_error("fr_packet_list_socket_add");
 		rc = -1;
 		goto done;
 	}
@@ -332,11 +334,12 @@ int rad_auth(const char *username, const char *password,
 	/* request->vps = readvp2(stdin, &done, "readvp2"); */
 
 	if(fr_packet_list_id_alloc(pl, request) < 0) {
-		fr_perror("fr_packet_list_id_alloc");
+		debug_fr_error("fr_packet_list_id_alloc");
 		rc = -1;
 		goto done;
 	}
 
+	debug("CHAP-encoding the password...\n");
 	if ((vp = pairfind(request->vps, PW_CHAP_PASSWORD)) != NULL) {
 		strlcpy(vp->vp_strvalue, password,
 			sizeof(vp->vp_strvalue));
@@ -346,8 +349,9 @@ int rad_auth(const char *username, const char *password,
 		vp->length = 17;
 	}
 
+	debug("Seding packet...\n");
 	if(rad_send(request, NULL, server->secret) == -1) {
-		fr_perror("rad_send");
+		debug_fr_error("rad_send");
 		rc = -1;
 		goto done;
 	}
@@ -368,21 +372,20 @@ int rad_auth(const char *username, const char *password,
 	tv.tv_usec = 500;
 
 	if (select(max_fd, &set, NULL, NULL, &tv) <= 0) {
-		fprintf(stderr, "no packet received!\n");
+		debug("ERROR: no packet received!\n");
 		rc = -1;
 		goto done;
 	}
 
 	reply = fr_packet_list_recv(pl, &set);
 	if (!reply) {
-		fprintf(stderr, "radclient: received bad packet: %s\n",
-				fr_strerror());
-		rc = -1;	/* bad packet */
+		debug("received bad packet: %s\n", fr_strerror());
+		rc = -1;
 		goto done;
 	}
 
 	if (rad_verify(reply, request, server->secret) < 0) {
-		fr_perror("rad_verify");
+		debug_fr_error("rad_verify");
 		rc = -1;
 		goto done;
 	}
@@ -390,16 +393,20 @@ int rad_auth(const char *username, const char *password,
 	fr_packet_list_yank(pl, request);
 
 	if (rad_decode(reply, request, server->secret) != 0) {
-		fr_perror("rad_decode");
+		debug_fr_error("rad_decode");
 		rc = -1;
 		goto done;
 	}
 
-	if(reply->code == PW_AUTHENTICATION_ACK)
+	if(reply->code == PW_AUTHENTICATION_ACK) {
+		debug("ACK: Authentication was successful.\n");
 		rc = 0;
+	}
 
-	if(reply->code == PW_AUTHENTICATION_REJECT)
+	if(reply->code == PW_AUTHENTICATION_REJECT) {
 		rc = 1;
+		debug("REJECT: Authentication was not successful.\n");
+	}
 
 	done:
 	if(request)
