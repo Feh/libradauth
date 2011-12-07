@@ -338,7 +338,6 @@ static int query_one_server(const char *username, const char *password,
 		rc = -1;
 		goto done;
 	}
-	/* request->sockfd = sockfd; */
 	request->sockfd = -1;
 	request->code = PW_AUTHENTICATION_REQUEST;
 
@@ -383,11 +382,26 @@ static int query_one_server(const char *username, const char *password,
 	pairadd(&request->vps, vp); /* the password */
 
 	memset(&src, 0, sizeof(src));
+	if(fr_ipaddr2sockaddr(&(request->dst_ipaddr), server->port,
+		(struct sockaddr_storage *) &src, &src_size)) {
+		/* This will "connect" the socket to the remote side. Since we
+		 * use UDP, this will just set the "default destination" for
+		 * packets. We need this call in order to find out our source
+		 * IP address. */
+		connect(sockfd, (struct sockaddr *) &src, src_size);
+	}
+	memset(&src, 0, sizeof(src));
 	if(getsockname(sockfd, (struct sockaddr *) &src, &src_size) < 0) {
 		error("getsockname: cannot resolve own socket address.");
 		rc = -1;
 		goto done;
 	}
+	vp = pairmake("NAS-IP-Address", "0.0.0.0", 0); /* dummy */
+	vp->vp_ipaddr = src.sin_addr.s_addr;
+	pairadd(&request->vps, vp);
+	vp = pairmake("NAS-Port", "10", 0);
+	pairadd(&request->vps, vp);
+
 	debug("  -> Sending packet via %s:%d...",
 		inet_ntoa(src.sin_addr), ntohs(src.sin_port));
 
