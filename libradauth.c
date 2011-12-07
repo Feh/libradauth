@@ -112,10 +112,10 @@ static struct rad_server *parse_servers(const char *config)
 			cur->next = tmp;
 			cur = tmp;
 		}
-		debug("successfully added server: %s:%d (%s) %s\n",
-			cur->host, cur->port,
-			cur->method == CHAP ? "CHAP" : "PAP",
-			cur->secret);
+		debug("successfully added server '%s': %s:%d "
+			"(prio %d, timeout %dms, method %s)\n",
+			cur->name, cur->host, cur->port, cur->priority,
+			cur->timeout, cur->method == CHAP ? "CHAP" : "PAP");
 	}
 
 	if(s_len > 0) {
@@ -157,9 +157,10 @@ static struct rad_server *sort_servers(struct rad_server *list, int try)
 	/* debugging */
 	tmp = head;
 	debug("Servers will be tried in this order: \n");
+	debug("   prio name = host:port\n");
 	do {
-		debug("    %s (%s:%d, priority %d)\n", tmp->name,
-			tmp->host, tmp->port, tmp->priority);
+		debug("%7d %s = %s:%d\n", tmp->priority,
+			tmp->name, tmp->host, tmp->port);
 	} while ((tmp = tmp->next));
 
 	free(servers);
@@ -272,12 +273,12 @@ static int ipaddr_from_server(struct in_addr *addr, const char *host)
 	struct hostent *res;
 
 	if(!(res = gethostbyname(host))) {
-		debug("Failed to resolve host '%s'.\n", host);
+		debug("  -> Failed to resolve host '%s'.\n", host);
 		return 0;
 	}
 
 	addr->s_addr = ((struct in_addr*) res->h_addr_list[0])->s_addr;
-	debug("resolved '%s' to '%s'\n", host, inet_ntoa(*addr));
+	debug("  -> resolved '%s' to '%s'\n", host, inet_ntoa(*addr));
 	return 1;
 }
 
@@ -351,13 +352,13 @@ static int query_one_server(const char *username, const char *password,
 	pairadd(&request->vps, vp);
 
 	if(server->method == PAP) {
-		debug("Using PAP-scrambled passwords\n");
+		debug("  -> Using PAP-scrambled passwords\n");
 		/* encryption of the packet will happen *automatically* just
 		 * before sending the packet via make_passwd() */
 		vp = pairmake("User-Password", password, 0);
 		vp->flags.encrypt = FLAG_ENCRYPT_USER_PASSWORD;
 	} else if(server->method == CHAP) {
-		debug("Using CHAP-scrambled passwords\n");
+		debug("  -> Using CHAP-scrambled passwords\n");
 		vp = pairmake("CHAP-Password", password, 0);
 		strlcpy(vp->vp_strvalue, password,
 			sizeof(vp->vp_strvalue));
@@ -372,7 +373,7 @@ static int query_one_server(const char *username, const char *password,
 		rc = -1;
 		goto done;
 	}
-	debug("Sending packet via %s:%d...\n",
+	debug("  -> Sending packet via %s:%d...\n",
 		inet_ntoa(src.sin_addr), ntohs(src.sin_port));
 
 	if(rad_send(request, NULL, server->secret) == -1) {
@@ -397,14 +398,14 @@ static int query_one_server(const char *username, const char *password,
 	tv.tv_usec = 1000 * (server->timeout % 1000);
 
 	if (select(max_fd, &set, NULL, NULL, &tv) <= 0) {
-		debug("ERROR: no packet received!\n");
+		debug("  -> ERROR: no packet received!\n");
 		rc = -1;
 		goto done;
 	}
 
 	reply = fr_packet_list_recv(pl, &set);
 	if (!reply) {
-		debug("received bad packet: %s\n", fr_strerror());
+		debug("  -> received bad packet: %s\n", fr_strerror());
 		rc = -1;
 		goto done;
 	}
@@ -424,13 +425,13 @@ static int query_one_server(const char *username, const char *password,
 	}
 
 	if(reply->code == PW_AUTHENTICATION_ACK) {
-		debug("ACK: Authentication was successful.\n");
+		debug("  -> ACK: Authentication was successful.\n");
 		rc = 0;
 	}
 
 	if(reply->code == PW_AUTHENTICATION_REJECT) {
 		rc = 1;
-		debug("REJECT: Authentication was not successful.\n");
+		debug("  -> REJECT: Authentication was not successful.\n");
 	}
 
 	done:
