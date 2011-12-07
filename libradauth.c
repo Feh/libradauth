@@ -40,7 +40,7 @@ static void server_add_field(struct rad_server *s,
 	const char *k, const char *v);
 static int query_one_server(const char *username, const char *password,
 	struct rad_server *server);
-static struct rad_server *sort_servers(struct rad_server *list);
+static struct rad_server *sort_servers(struct rad_server *list, int try);
 static int cmp_prio_rand (const void *, const void *);
 static void free_server_list(struct rad_server *head);
 static int ipaddr_from_server(struct in_addr *addr, const char *host);
@@ -125,12 +125,10 @@ static struct rad_server *parse_servers(const char *config)
 	free(stm);
 	fclose(fp);
 
-	head = sort_servers(head);
-
 	return head;
 }
 
-static struct rad_server *sort_servers(struct rad_server *list)
+static struct rad_server *sort_servers(struct rad_server *list, int try)
 {
 	int i, n;
 	struct rad_server *head, *tmp;
@@ -146,7 +144,7 @@ static struct rad_server *sort_servers(struct rad_server *list)
 	for(i = 0, tmp = list; i < n; i++, tmp = tmp->next)
 		servers[i] = tmp;
 
-	srand(time(NULL));
+	srand(time(NULL) + 0xF00 * try);
 	qsort(servers, n, sizeof(struct rad_server *), cmp_prio_rand);
 
 	/* reconstruct the list */
@@ -447,6 +445,7 @@ int rad_auth(const char *username, const char *password,
 {
 	struct rad_server *serverlist, *server;
 	int rc = -1;
+	int try;
 
 	debug("initiating dictionary '%s'...\n", RADIUS_DICTIONARY);
 	if (dict_init(".", RADIUS_DICTIONARY) < 0) {
@@ -462,11 +461,19 @@ int rad_auth(const char *username, const char *password,
 		rc = -1;
 		goto done;
 	}
-	server = serverlist;
-	/* todo: sort by prio, pick random one. */
-	debug("Will query server: %s:%d\n", server->name, server->port);
 
-	rc = query_one_server(username, password, server);
+	for(try = 1; try <= retries; try++) {
+		debug("ATTEMPT #%d of %d\n", try, retries);
+		server = serverlist = sort_servers(serverlist, try);
+		do {
+			debug("Querying server: %s:%d\n", server->name, server->port);
+			rc = query_one_server(username, password, server);
+			if(rc != -1)
+				goto done;
+		} while((server = server->next) != NULL);
+		debug("FAILED to reach any of the servers after %d tries. "
+			"Giving up.\n", try);
+	}
 
 	done:
 	if(serverlist)
