@@ -38,6 +38,10 @@ static struct rad_server *parse_one_server(char *buf);
 static struct rad_server *parse_servers(const char *config);
 static void server_add_field(struct rad_server *s,
 	const char *k, const char *v);
+static int query_one_server(const char *username, const char *password,
+	struct rad_server *server);
+static struct rad_server *sort_servers(struct rad_server *list, int try);
+static int cmp_prio_rand (const void *, const void *);
 static void free_server_list(struct rad_server *head);
 static int ipaddr_from_server(struct in_addr *addr, const char *host);
 
@@ -124,6 +128,58 @@ static struct rad_server *parse_servers(const char *config)
 	return head;
 }
 
+static struct rad_server *sort_servers(struct rad_server *list, int try)
+{
+	int i, n;
+	struct rad_server *head, *tmp;
+	struct rad_server **servers;
+
+	for(n = 0, tmp = list; tmp; tmp = tmp->next)
+		n++;
+
+	servers = malloc(n * sizeof(struct rad_server *));
+	if(!servers)
+		return NULL;
+
+	for(i = 0, tmp = list; i < n; i++, tmp = tmp->next)
+		servers[i] = tmp;
+
+	srand(time(NULL) + 0xF00 * try);
+	qsort(servers, n, sizeof(struct rad_server *), cmp_prio_rand);
+
+	/* reconstruct the list */
+	head = servers[0];
+	for(i = 1, tmp = head; i < n; i++, tmp = tmp->next)
+		tmp->next = servers[i];
+	tmp->next = NULL; /* last entry */
+
+	/* debugging */
+	tmp = head;
+	debug("Servers will be tried in this order: \n");
+	do {
+		debug("    %s (%s:%d, priority %d)\n", tmp->name,
+			tmp->host, tmp->port, tmp->priority);
+	} while ((tmp = tmp->next));
+
+	free(servers);
+
+	return head;
+}
+
+static int cmp_prio_rand (const void *a, const void *b)
+{
+	struct rad_server *r, *s;
+	r = * (struct rad_server * const *) a;
+	s = * (struct rad_server * const *) b;
+
+	if(r->priority < s->priority)
+		return 1;
+	if(r->priority > s->priority)
+		return -1;
+	/* same priority - pick a random one :-) */
+	return (rand() % 2 ? -1 : 1);
+}
+
 static struct rad_server *parse_one_server(char *buf)
 {
 	struct rad_server *s;
@@ -201,7 +257,6 @@ static void free_server_list(struct rad_server *head)
 	struct rad_server *cur, *tmp;
 	cur = head;
 	do {
-		debug("freeing server '%s'\n", cur->name);
 		tmp = cur->next;
 		free(cur);
 		cur = tmp;
@@ -222,50 +277,20 @@ static int ipaddr_from_server(struct in_addr *addr, const char *host)
 	return 1;
 }
 
-
-int rad_auth(const char *username, const char *password,
-		const char *servername, const char *config)
+static int query_one_server(const char *username, const char *password,
+		struct rad_server *server)
 {
 	struct timeval tv;
 	volatile int max_fd;
 	fd_set set;
+	struct sockaddr_in src;
+	int src_size = sizeof(src);
+	int rc = -1;
 
 	fr_ipaddr_t client;
 	fr_packet_list_t *pl = 0;
 	VALUE_PAIR *vp;
 	RADIUS_PACKET *request = 0, *reply = 0;
-
-	struct rad_server *serverlist, *server;
-
-	int rc = -1;
-
-	debug("initiating dictionary '%s'...\n", RADIUS_DICTIONARY);
-	if (dict_init(".", RADIUS_DICTIONARY) < 0) {
-		debug_fr_error("dict_init");
-		rc = -1;
-		goto done;
-	}
-
-	debug("parsing servers from config file '%s'\n", config);
-	serverlist = parse_servers(config);
-	if(!serverlist) {
-		debug("Could not parse servers, bailing!\n");
-		rc = -1;
-		goto done;
-	}
-	server = serverlist;
-	do {
-		if(!strcasecmp(server->name, servername))
-			break;
-		server = server->next;
-	} while(server);
-	if(!server) {
-		debug("ERROR: server '%s' not found in config file '%s'.\n",
-			servername, config);
-		rc = -1;
-		goto done;
-	}
-	debug("Will query server: %s:%d\n", server->name, server->port);
 
 	request = rad_alloc(1);
 	if(!request) {
@@ -338,7 +363,14 @@ int rad_auth(const char *username, const char *password,
 	}
 	pairadd(&request->vps, vp); /* the password */
 
-	debug("Seding packet...\n");
+	memset(&src, 0, sizeof(src));
+	if(getsockname(sockfd, (struct sockaddr *) &src, &src_size) < 0) {
+		rc = -1;
+		goto done;
+	}
+	debug("Sending packet via %s:%d...\n",
+		inet_ntoa(src.sin_addr), ntohs(src.sin_port));
+
 	if(rad_send(request, NULL, server->secret) == -1) {
 		debug_fr_error("rad_send");
 		rc = -1;
@@ -404,6 +436,48 @@ int rad_auth(const char *username, const char *password,
 		rad_free(&reply);
 	if(pl)
 		fr_packet_list_free(pl);
+
+	return rc;
+}
+
+int rad_auth(const char *username, const char *password,
+		int retries, const char *config)
+{
+	struct rad_server *serverlist, *server;
+	int rc = -1;
+	int try;
+
+	debug("initiating dictionary '%s'...\n", RADIUS_DICTIONARY);
+	if (dict_init(".", RADIUS_DICTIONARY) < 0) {
+		debug_fr_error("dict_init");
+		rc = -1;
+		goto done;
+	}
+
+	debug("parsing servers from config file '%s'\n", config);
+	serverlist = parse_servers(config);
+	if(!serverlist) {
+		debug("Could not parse servers, bailing!\n");
+		rc = -1;
+		goto done;
+	}
+
+	for(try = 1; try <= retries; try++) {
+		debug("ATTEMPT #%d of %d\n", try, retries);
+		server = serverlist = sort_servers(serverlist, try);
+		do {
+			debug("Querying server: %s:%d\n", server->name, server->port);
+			rc = query_one_server(username, password, server);
+			if(rc != -1)
+				goto done;
+		} while((server = server->next) != NULL);
+		debug("FAILED to reach any of the servers after %d tries. "
+			"Giving up.\n", try);
+	}
+
+	done:
+	if(serverlist)
+		free_server_list(serverlist);
 
 	return rc;
 }
