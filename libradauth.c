@@ -259,7 +259,6 @@ static void free_server_list(struct rad_server *head)
 	struct rad_server *cur, *tmp;
 	cur = head;
 	do {
-		debug("freeing server '%s'\n", cur->name);
 		tmp = cur->next;
 		free(cur);
 		cur = tmp;
@@ -470,6 +469,9 @@ int rad_auth(const char *username, const char *password,
 	rc = query_one_server(username, password, server);
 
 	done:
+	if(serverlist)
+		free_server_list(serverlist);
+
 	return rc;
 }
 
