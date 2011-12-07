@@ -15,11 +15,18 @@
 #define LIBNAME "[libradauth] "
 #ifdef DEBUG
 #define debug(fmt, ...) \
-        fprintf(stderr, LIBNAME fmt, ##__VA_ARGS__)
-#define debug_fr_error(what) debug(what ": ERROR: %s\n", fr_strerror())
+	fprintf(stderr, LIBNAME fmt "\n", ##__VA_ARGS__)
+#define error(fmt, ...) \
+	snprintf(last_error, BUFSIZE, fmt, ##__VA_ARGS__); \
+	debug("%s", last_error)
+#define debug_fr_error(what) \
+	error(what ": ERROR: %s", fr_strerror())
 #else
 #define debug(fmt, ...)
-#define debug_fr_error(what)
+#define debug_fr_error(what) \
+	error("%s: %s", what, fr_strerror())
+#define error(fmt, ...) \
+	snprintf(last_error, BUFSIZE, fmt, ##__VA_ARGS__)
 #endif
 
 struct rad_server;
@@ -34,6 +41,13 @@ struct rad_server {
 	enum { NONE, PAP, CHAP } method;
 	struct rad_server *next;
 };
+
+static char last_error[BUFSIZE] = "";
+
+char *rad_auth_errstr(void)
+{
+	return last_error;
+}
 
 static struct rad_server *parse_one_server(char *buf);
 static struct rad_server *parse_servers(const char *config);
@@ -60,7 +74,7 @@ static struct rad_server *parse_servers(const char *config)
 	head = NULL;
 
 	if((fp = fopen(config, "r")) == NULL) {
-		debug("Failed to open config file '%s'!\n", config);
+		error("Failed to open config file '%s'!", config);
 		return NULL;
 	}
 
@@ -80,7 +94,7 @@ static struct rad_server *parse_servers(const char *config)
 			continue;
 
 		if(s_len + b_len + 1 > s_size) {
-			debug("Resizing buffer to make the statement fit\n");
+			debug("Resizing buffer to make the statement fit");
 			s_size += BUFSIZE;
 			stm = realloc(stm, s_size);
 			if(!stm)
@@ -113,14 +127,14 @@ static struct rad_server *parse_servers(const char *config)
 			cur = tmp;
 		}
 		debug("successfully added server '%s': %s:%d "
-			"(prio %d, timeout %dms, method %s)\n",
+			"(prio %d, timeout %dms, method %s)",
 			cur->name, cur->host, cur->port, cur->priority,
 			cur->timeout, cur->method == CHAP ? "CHAP" : "PAP");
 	}
 
 	if(s_len > 0) {
-		debug("reached EOF, could not find closing '}'!\n");
-		debug("    (statement will be ignored)\n");
+		debug("reached EOF, could not find closing '}'!");
+		debug("    (statement will be ignored)");
 	}
 
 	free(stm);
@@ -156,10 +170,10 @@ static struct rad_server *sort_servers(struct rad_server *list, int try)
 
 	/* debugging */
 	tmp = head;
-	debug("Servers will be tried in this order: \n");
-	debug("   prio name = host:port\n");
+	debug("Servers will be tried in this order: ");
+	debug("   prio name = host:port");
 	do {
-		debug("%7d %s = %s:%d\n", tmp->priority,
+		debug("%7d %s = %s:%d", tmp->priority,
 			tmp->name, tmp->host, tmp->port);
 	} while ((tmp = tmp->next));
 
@@ -211,7 +225,7 @@ static struct rad_server *parse_one_server(char *buf)
 	strcpy(s->bind, "0.0.0.0");
 
 	if(!(t = strtok(NULL, delim)) || *t != '{') {
-		debug("could not find '{' after statement name!\n");
+		debug("could not find '{' after statement name!");
 		free(s);
 		return NULL;
 	}
@@ -224,7 +238,7 @@ static struct rad_server *parse_one_server(char *buf)
 
 	if(!*(s->host) || s->method == NONE) {
 		debug("%s: error in format: at least 'host' "
-			"or 'method' are missing!\n", s->name);
+			"or 'method' are missing!", s->name);
 		free(s);
 		return NULL;
 	}
@@ -253,7 +267,7 @@ static void server_add_field(struct rad_server *s, const char *k, const char *v)
 		else if(!strcasecmp(v, "PAP"))
 			s->method = PAP;
 	} else {
-		debug("%s: wrong or unknown key: %s = %s\n", s->name, k, v);
+		debug("%s: wrong or unknown key: %s = %s", s->name, k, v);
 	}
 }
 
@@ -273,12 +287,12 @@ static int ipaddr_from_server(struct in_addr *addr, const char *host)
 	struct hostent *res;
 
 	if(!(res = gethostbyname(host))) {
-		debug("  -> Failed to resolve host '%s'.\n", host);
+		debug("  -> Failed to resolve host '%s'.", host);
 		return 0;
 	}
 
 	addr->s_addr = ((struct in_addr*) res->h_addr_list[0])->s_addr;
-	debug("  -> resolved '%s' to '%s'\n", host, inet_ntoa(*addr));
+	debug("  -> resolved '%s' to '%s'", host, inet_ntoa(*addr));
 	return 1;
 }
 
@@ -290,7 +304,7 @@ static int query_one_server(const char *username, const char *password,
 	fd_set set;
 	struct sockaddr_in src;
 	int src_size = sizeof(src);
-	int rc = -1;
+	int rc = -2;
 
 	fr_ipaddr_t client;
 	fr_packet_list_t *pl = 0;
@@ -352,13 +366,13 @@ static int query_one_server(const char *username, const char *password,
 	pairadd(&request->vps, vp);
 
 	if(server->method == PAP) {
-		debug("  -> Using PAP-scrambled passwords\n");
+		debug("  -> Using PAP-scrambled passwords");
 		/* encryption of the packet will happen *automatically* just
 		 * before sending the packet via make_passwd() */
 		vp = pairmake("User-Password", password, 0);
 		vp->flags.encrypt = FLAG_ENCRYPT_USER_PASSWORD;
 	} else if(server->method == CHAP) {
-		debug("  -> Using CHAP-scrambled passwords\n");
+		debug("  -> Using CHAP-scrambled passwords");
 		vp = pairmake("CHAP-Password", password, 0);
 		strlcpy(vp->vp_strvalue, password,
 			sizeof(vp->vp_strvalue));
@@ -370,10 +384,11 @@ static int query_one_server(const char *username, const char *password,
 
 	memset(&src, 0, sizeof(src));
 	if(getsockname(sockfd, (struct sockaddr *) &src, &src_size) < 0) {
+		error("getsockname: cannot resolve own socket address.");
 		rc = -1;
 		goto done;
 	}
-	debug("  -> Sending packet via %s:%d...\n",
+	debug("  -> Sending packet via %s:%d...",
 		inet_ntoa(src.sin_addr), ntohs(src.sin_port));
 
 	if(rad_send(request, NULL, server->secret) == -1) {
@@ -389,6 +404,7 @@ static int query_one_server(const char *username, const char *password,
 
 	max_fd = fr_packet_list_fd_set(pl, &set);
 	if (max_fd < 0) {
+		debug_fr_error("fr_packet_list_fd_set");
 		rc = -1;
 		goto done;
 	}
@@ -398,14 +414,15 @@ static int query_one_server(const char *username, const char *password,
 	tv.tv_usec = 1000 * (server->timeout % 1000);
 
 	if (select(max_fd, &set, NULL, NULL, &tv) <= 0) {
-		debug("  -> ERROR: no packet received!\n");
-		rc = -1;
+		debug("  -> TIMEOUT: no packet received in %dms!",
+			server->timeout);
+		rc = -2;
 		goto done;
 	}
 
 	reply = fr_packet_list_recv(pl, &set);
 	if (!reply) {
-		debug("  -> received bad packet: %s\n", fr_strerror());
+		error("received bad packet: %s", fr_strerror());
 		rc = -1;
 		goto done;
 	}
@@ -425,13 +442,13 @@ static int query_one_server(const char *username, const char *password,
 	}
 
 	if(reply->code == PW_AUTHENTICATION_ACK) {
-		debug("  -> ACK: Authentication was successful.\n");
+		debug("  -> ACK: Authentication was successful.");
 		rc = 0;
 	}
 
 	if(reply->code == PW_AUTHENTICATION_REJECT) {
 		rc = 1;
-		debug("  -> REJECT: Authentication was not successful.\n");
+		debug("  -> REJECT: Authentication was not successful.");
 	}
 
 	done:
@@ -452,32 +469,32 @@ int rad_auth(const char *username, const char *password,
 	int rc = -1;
 	int try;
 
-	debug("initiating dictionary '%s'...\n", RADIUS_DICTIONARY);
+	debug("initiating dictionary '%s'...", RADIUS_DICTIONARY);
 	if (dict_init(".", RADIUS_DICTIONARY) < 0) {
 		debug_fr_error("dict_init");
 		rc = -1;
 		goto done;
 	}
 
-	debug("parsing servers from config file '%s'\n", config);
+	debug("parsing servers from config file '%s'", config);
 	serverlist = parse_servers(config);
 	if(!serverlist) {
-		debug("Could not parse servers, bailing!\n");
+		error("Could not parse server config '%s', cannot continue.", config);
 		rc = -1;
 		goto done;
 	}
 
 	for(try = 1; try <= retries; try++) {
-		debug("ATTEMPT #%d of %d\n", try, retries);
+		debug("ATTEMPT #%d of %d", try, retries);
 		server = serverlist = sort_servers(serverlist, try);
 		do {
-			debug("Querying server: %s:%d\n", server->name, server->port);
+			debug("Querying server: %s:%d", server->name, server->port);
 			rc = query_one_server(username, password, server);
-			if(rc != -1)
+			if(rc >= 0)
 				goto done;
 		} while((server = server->next) != NULL);
-		debug("FAILED to reach any of the servers after %d tries. "
-			"Giving up.\n", try);
+		debug("FAILED to reach any of the servers at try #%d/%d. %s",
+			try, retries, try == retries ? "Giving up." : "Trying again...");
 	}
 
 	done:
