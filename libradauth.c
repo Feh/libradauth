@@ -230,6 +230,8 @@ static int query_one_server(const char *username, const char *password,
 	struct timeval tv;
 	volatile int max_fd;
 	fd_set set;
+	struct sockaddr_in src;
+	int src_size = sizeof(src);
 	int rc = -1;
 
 	fr_ipaddr_t client;
@@ -308,7 +310,14 @@ static int query_one_server(const char *username, const char *password,
 	}
 	pairadd(&request->vps, vp); /* the password */
 
-	debug("Seding packet...\n");
+	memset(&src, 0, sizeof(src));
+	if(getsockname(sockfd, (struct sockaddr *) &src, &src_size) < 0) {
+		rc = -1;
+		goto done;
+	}
+	debug("Sending packet via %s:%d...\n",
+		inet_ntoa(src.sin_addr), ntohs(src.sin_port));
+
 	if(rad_send(request, NULL, server->secret) == -1) {
 		debug_fr_error("rad_send");
 		rc = -1;
