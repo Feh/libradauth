@@ -28,6 +28,7 @@ struct rad_server {
 	char host[64];
 	int port;
 	int priority;
+	int timeout;
 	char bind[64];
 	char secret[64];
 	enum { NONE, PAP, CHAP } method;
@@ -204,6 +205,7 @@ static struct rad_server *parse_one_server(char *buf)
 	*(s->secret) = '\0';
 	s->port = 1812;
 	s->priority = 0;
+	s->timeout = 1000; /* 1 second */
 	s->method = NONE;
 	strcpy(s->bind, "0.0.0.0");
 
@@ -242,6 +244,8 @@ static void server_add_field(struct rad_server *s, const char *k, const char *v)
 		s->port = atoi(v);
 	else if(!strcmp(k, "priority"))
 		s->priority = atoi(v);
+	else if(!strcmp(k, "timeout"))
+		s->timeout = atoi(v);
 	else if(!strcmp(k, "method")) {
 		if(!strcasecmp(v, "CHAP"))
 			s->method = CHAP;
@@ -388,9 +392,9 @@ static int query_one_server(const char *username, const char *password,
 		goto done;
 	}
 
-	/* wait 1.5 seconds */
-	tv.tv_sec = 1;
-	tv.tv_usec = 500;
+	/* wait a configured time (default: 1.0s) */
+	tv.tv_sec  = server->timeout / 1000;
+	tv.tv_usec = 1000 * (server->timeout % 1000);
 
 	if (select(max_fd, &set, NULL, NULL, &tv) <= 0) {
 		debug("ERROR: no packet received!\n");
