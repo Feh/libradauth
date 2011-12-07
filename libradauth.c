@@ -38,6 +38,8 @@ static struct rad_server *parse_one_server(char *buf);
 static struct rad_server *parse_servers(const char *config);
 static void server_add_field(struct rad_server *s,
 	const char *k, const char *v);
+static int query_one_server(const char *username, const char *password,
+	struct rad_server *server);
 static void free_server_list(struct rad_server *head);
 static int ipaddr_from_server(struct in_addr *addr, const char *host);
 
@@ -222,50 +224,18 @@ static int ipaddr_from_server(struct in_addr *addr, const char *host)
 	return 1;
 }
 
-
-int rad_auth(const char *username, const char *password,
-		const char *servername, const char *config)
+static int query_one_server(const char *username, const char *password,
+		struct rad_server *server)
 {
 	struct timeval tv;
 	volatile int max_fd;
 	fd_set set;
+	int rc = -1;
 
 	fr_ipaddr_t client;
 	fr_packet_list_t *pl = 0;
 	VALUE_PAIR *vp;
 	RADIUS_PACKET *request = 0, *reply = 0;
-
-	struct rad_server *serverlist, *server;
-
-	int rc = -1;
-
-	debug("initiating dictionary '%s'...\n", RADIUS_DICTIONARY);
-	if (dict_init(".", RADIUS_DICTIONARY) < 0) {
-		debug_fr_error("dict_init");
-		rc = -1;
-		goto done;
-	}
-
-	debug("parsing servers from config file '%s'\n", config);
-	serverlist = parse_servers(config);
-	if(!serverlist) {
-		debug("Could not parse servers, bailing!\n");
-		rc = -1;
-		goto done;
-	}
-	server = serverlist;
-	do {
-		if(!strcasecmp(server->name, servername))
-			break;
-		server = server->next;
-	} while(server);
-	if(!server) {
-		debug("ERROR: server '%s' not found in config file '%s'.\n",
-			servername, config);
-		rc = -1;
-		goto done;
-	}
-	debug("Will query server: %s:%d\n", server->name, server->port);
 
 	request = rad_alloc(1);
 	if(!request) {
@@ -405,6 +375,36 @@ int rad_auth(const char *username, const char *password,
 	if(pl)
 		fr_packet_list_free(pl);
 
+	return rc;
+}
+
+int rad_auth(const char *username, const char *password,
+		int retries, const char *config)
+{
+	struct rad_server *serverlist, *server;
+	int rc = -1;
+
+	debug("initiating dictionary '%s'...\n", RADIUS_DICTIONARY);
+	if (dict_init(".", RADIUS_DICTIONARY) < 0) {
+		debug_fr_error("dict_init");
+		rc = -1;
+		goto done;
+	}
+
+	debug("parsing servers from config file '%s'\n", config);
+	serverlist = parse_servers(config);
+	if(!serverlist) {
+		debug("Could not parse servers, bailing!\n");
+		rc = -1;
+		goto done;
+	}
+	server = serverlist;
+	/* todo: sort by prio, pick random one. */
+	debug("Will query server: %s:%d\n", server->name, server->port);
+
+	rc = query_one_server(username, password, server);
+
+	done:
 	return rc;
 }
 
