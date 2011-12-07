@@ -1,10 +1,43 @@
 # The RADIUS servers to query
-# Note that the "host" and "method" arguments are mandatory!
+
+# Every server must at least contain the "host" and "method" key.
+# It is referred to by its name (the string before the opening curly
+# brace). Thus, you can define the same host multiple times with
+# different setting if you use distinct names.
+#
+# The following keys are recognized:
+#
+#  host      hostname or ip address to be used
+#  port      port to be used [default: 1812]
+#  method    either one of PAP or CHAP
+#  bind      address or host name to bind to [default: 0.0.0.0]
+#  secret    RADIUS shared secret [default: none]
+#  priority  an integer; bigger means more important [default: 0]
+#  timeout   how long to wait for a response, in ms. [default: 1000]
+
+# The following example defines three RADIUS servers. Two of them have
+# the same priority (10), and the order in which they will be queried
+# will thus be random. The third (backup) server will *only* be
+# queried if the first two have not answered in time (0.5s).
 
 radius1 {
-        host    localhost
-        port    1812
-        bind    0.0.0.0
-        secret  v3rYs3cr1t
-        method  CHAP
+        host        radius1.example.com
+        secret      v3rYs3cr1t
+        method      CHAP
+        priority    10
+        timeout     500
+}
+
+radius2 {
+        host        radius2.example.com
+        secret      v3rYs3cr1t
+        method      CHAP
+        priority    10
+        timeout     500
+}
+
+radius-backup {
+        host        radius3.example.com
+        secret      v3rYs3cr1t
+        method      CHAP
 }
