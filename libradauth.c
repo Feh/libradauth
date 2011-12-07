@@ -465,7 +465,7 @@ static int query_one_server(const char *username, const char *password,
 int rad_auth(const char *username, const char *password,
 		int retries, const char *config)
 {
-	struct rad_server *serverlist, *server;
+	struct rad_server *serverlist = 0, *server = 0;
 	int rc = -1;
 	int try;
 
