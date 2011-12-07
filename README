@@ -1,0 +1,22 @@
+libradauth
+==========
+
+This library is a small wrapper around the authentication routines
+provided by the FreeRADIUS server library[1]. It does *not* aim to
+be a clever, new RADIUS implementation. Neither does it support
+any challenge-response authentication or accounting mechanisms.
+
+It is primarily thought to be used when you have to teach RADIUS
+authentication to an LDAP, FTP, News server, etc. If you simply want
+to authenticate a username/password combination against a RADIUS
+server, this will give you a stress-free interface.
+
+There are a few alternatives[2][3][4], most of which sadly lack active
+maintenance and/or have a boguous code base. Not implementing any
+RADIUS logic again, but using the FreeRADIUS implementation, will
+guarantee a stable code base.
+
+[1]  http://freeradius.org/
+[2]  http://portal-to-web.de/tacacs/libradius.php
+[3]  http://wiki.freeradius.org/Radiusclient
+[4]  ftp://ftp.irisa.fr/pub/OpenBSD/src/libexec/login_radius/raddauth.c
