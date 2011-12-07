@@ -1,10 +1,13 @@
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <netdb.h>
 
 #include <libradius.h>
 #include <radpaths.h>
 #include <conf.h>
+
+#include "libradauth.h"
 
 #define strlcpy(A,B,C) strncpy(A,B,C), *(A+(C)-1)='\0'
 #define BUFSIZE 1024
@@ -37,9 +40,6 @@ static void server_add_field(struct rad_server *s,
 	const char *k, const char *v);
 static void free_server_list(struct rad_server *head);
 static int ipaddr_from_server(struct in_addr *addr, const char *host);
-
-int rad_auth(const char *username, const char *password,
-		const char *host, const char *config);
 
 static struct rad_server *parse_servers(const char *config)
 {
@@ -222,21 +222,6 @@ static int ipaddr_from_server(struct in_addr *addr, const char *host)
 	return 1;
 }
 
-
-int main(int argc, char *argv[])
-{
-	char username[32], password[32];
-
-	if(argc != 3) {
-		fprintf(stdout, "<user> <pw>: ");
-		fscanf(stdin, "%31s %31s", &username, &password);
-	} else {
-		strncpy(username, argv[1], 31);
-		strncpy(password, argv[2], 31);
-	}
-
-	return rad_auth(username, password, "localhost", "servers");
-}
 
 int rad_auth(const char *username, const char *password,
 		const char *servername, const char *config)
