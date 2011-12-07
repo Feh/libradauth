@@ -9,7 +9,7 @@
 #define strlcpy(A,B,C) strncpy(A,B,C), *(A+(C)-1)='\0'
 #define BUFSIZE 1024
 
-#define LIBNAME "[libradclient] "
+#define LIBNAME "[libradauth] "
 #ifdef DEBUG
 #define debug(fmt, ...) \
         fprintf(stderr, LIBNAME fmt, ##__VA_ARGS__)
