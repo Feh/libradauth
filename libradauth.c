@@ -40,6 +40,8 @@ static void server_add_field(struct rad_server *s,
 	const char *k, const char *v);
 static int query_one_server(const char *username, const char *password,
 	struct rad_server *server);
+static struct rad_server *sort_servers(struct rad_server *list);
+static int cmp_prio_rand (const void *, const void *);
 static void free_server_list(struct rad_server *head);
 static int ipaddr_from_server(struct in_addr *addr, const char *host);
 
@@ -123,7 +125,61 @@ static struct rad_server *parse_servers(const char *config)
 	free(stm);
 	fclose(fp);
 
+	head = sort_servers(head);
+
 	return head;
+}
+
+static struct rad_server *sort_servers(struct rad_server *list)
+{
+	int i, n;
+	struct rad_server *head, *tmp;
+	struct rad_server **servers;
+
+	for(n = 0, tmp = list; tmp; tmp = tmp->next)
+		n++;
+
+	servers = malloc(n * sizeof(struct rad_server *));
+	if(!servers)
+		return NULL;
+
+	for(i = 0, tmp = list; i < n; i++, tmp = tmp->next)
+		servers[i] = tmp;
+
+	srand(time(NULL));
+	qsort(servers, n, sizeof(struct rad_server *), cmp_prio_rand);
+
+	/* reconstruct the list */
+	head = servers[0];
+	for(i = 1, tmp = head; i < n; i++, tmp = tmp->next)
+		tmp->next = servers[i];
+	tmp->next = NULL; /* last entry */
+
+	/* debugging */
+	tmp = head;
+	debug("Servers will be tried in this order: \n");
+	do {
+		debug("    %s (%s:%d, priority %d)\n", tmp->name,
+			tmp->host, tmp->port, tmp->priority);
+	} while ((tmp = tmp->next));
+
+	free(servers);
+
+	return head;
+}
+
+static int cmp_prio_rand (const void *a, const void *b)
+{
+	struct rad_server *r, *s;
+	r = * (struct rad_server * const *) a;
+	s = * (struct rad_server * const *) b;
+
+	if(r->priority < s->priority)
+		return 1;
+	if(r->priority > s->priority)
+		return -1;
+	/* same priority - pick a random one :-) */
+	return (rand() % 2 ? -1 : 1);
 }
 
 static struct rad_server *parse_one_server(char *buf)
