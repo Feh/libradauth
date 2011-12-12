@@ -6,6 +6,7 @@ int main(int argc, char *argv[])
 {
 	int rc;
 	char username[32], password[32];
+	const char *my_dict[2] = { ".", "dictionary" };
 
 	if(argc != 3) {
 		fprintf(stdout, "<user> <pw>: ");
@@ -15,7 +16,7 @@ int main(int argc, char *argv[])
 		strncpy(password, argv[2], 31);
 	}
 
-	rc = rad_auth(username, password, 3, "./servers");
+	rc = rad_auth(username, password, 3, "./servers", my_dict);
 	if(rc == -1)
 		fprintf(stderr, "Cannot authenticate: %s\n",
 				rad_auth_errstr());

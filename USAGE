@@ -2,11 +2,14 @@
     file for more information. Note, that *all* servers in that file
     will be queried sequentially, until the first one answers.
 
-2.) Call rad_auth(user, pw, retries, config) from your program,
-    where `user', `pw' and `configs' are char* strings, and retries is
+2.) Call rad_auth(user, pw, retries, config, dict) from your program,
+    where `user', `pw' and `config' are char* strings, and retries is
     an integer specifying how many times the authentication should be
     tried. If it fails for the first round, all servers will be tried
-    again. Refer to `radauth_test.c' for a complete example.
+    again. The `dict' argument must be a (const char *[2]) array. If
+    you specify NULL here, the library will try the default path.
+
+    Refer to `radauth_test.c' for a complete example.
 
     return code | meaning
     ------------+----------------------------------------------

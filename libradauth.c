@@ -43,6 +43,8 @@ struct rad_server {
 	struct rad_server *next;
 };
 
+static const char *rad_default_dict[2] = { RADIUS_DIR, RADIUS_DICTIONARY };
+
 static char last_error[BUFSIZE] = "";
 
 char *rad_auth_errstr(void)
@@ -450,14 +452,19 @@ static int query_one_server(const char *username, const char *password,
 }
 
 int rad_auth(const char *username, const char *password,
-		int retries, const char *config)
+		int retries, const char *config, const char *userdict[2])
 {
 	struct rad_server *serverlist = 0, *server = 0;
+	const char **dict;
 	int rc = -1;
 	int try;
 
-	debug("initiating dictionary '%s'...", RADIUS_DICTIONARY);
-	if (dict_init(".", RADIUS_DICTIONARY) < 0)
+	if(userdict)
+		dict = userdict;
+	else
+		dict = rad_default_dict;
+	debug("initiating dictionary '%s/%s'...", dict[0], dict[1]);
+	if (dict_init(dict[0], dict[1]) < 0)
 		bail_fr_error("dict_init");
 
 	debug("parsing servers from config file '%s'", config);
