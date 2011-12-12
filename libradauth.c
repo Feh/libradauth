@@ -28,6 +28,7 @@
 #define error(fmt, ...) \
 	snprintf(last_error, BUFSIZE, fmt, ##__VA_ARGS__)
 #endif
+#define bail_fr_error(what) { debug_fr_error(what); rc = -1; goto done; }
 
 struct rad_server;
 struct rad_server {
@@ -312,11 +313,8 @@ static int query_one_server(const char *username, const char *password,
 	RADIUS_PACKET *request = 0, *reply = 0;
 
 	request = rad_alloc(1);
-	if(!request) {
-		debug_fr_error("rad_alloc");
-		rc = -1;
-		goto done;
-	}
+	if(!request)
+		bail_fr_error("rad_alloc");
 
 	request->code = PW_AUTHENTICATION_REQUEST;
 
@@ -333,32 +331,19 @@ static int query_one_server(const char *username, const char *password,
 
 	/* int sockfd = fr_socket(&request->dst_ipaddr, 0); */
 	int sockfd = fr_socket(&client, 0);
-	if(!sockfd) {
-		debug_fr_error("fr_socket");
-		rc = -1;
-		goto done;
-	}
+	if(!sockfd)
+		bail_fr_error("fr_socket");
 	request->sockfd = -1;
 	request->code = PW_AUTHENTICATION_REQUEST;
 
-	pl = fr_packet_list_create(1);
-	if(!pl) {
-		debug_fr_error("fr_packet_list_create");
-		rc = -1;
-		goto done;
-	}
+	if(!(pl = fr_packet_list_create(1)))
+		bail_fr_error("fr_packet_list_create");
 
-	if(!fr_packet_list_socket_add(pl, sockfd)) {
-		debug_fr_error("fr_packet_list_socket_add");
-		rc = -1;
-		goto done;
-	}
+	if(!fr_packet_list_socket_add(pl, sockfd))
+		bail_fr_error("fr_packet_list_socket_add");
 
-	if(fr_packet_list_id_alloc(pl, request) < 0) {
-		debug_fr_error("fr_packet_list_id_alloc");
-		rc = -1;
-		goto done;
-	}
+	if(fr_packet_list_id_alloc(pl, request) < 0)
+		bail_fr_error("fr_packet_list_id_alloc");
 
 	/* construct value pairs */
 	vp = pairmake("User-Name", username, 0);
@@ -405,11 +390,8 @@ static int query_one_server(const char *username, const char *password,
 	debug("  -> Sending packet via %s:%d...",
 		inet_ntoa(src.sin_addr), ntohs(src.sin_port));
 
-	if(rad_send(request, NULL, server->secret) == -1) {
-		debug_fr_error("rad_send");
-		rc = -1;
-		goto done;
-	}
+	if(rad_send(request, NULL, server->secret) == -1)
+		bail_fr_error("rad_send");
 
 	/* GESENDET! :-) */
 
@@ -417,11 +399,8 @@ static int query_one_server(const char *username, const char *password,
 	FD_ZERO(&set);
 
 	max_fd = fr_packet_list_fd_set(pl, &set);
-	if (max_fd < 0) {
-		debug_fr_error("fr_packet_list_fd_set");
-		rc = -1;
-		goto done;
-	}
+	if (max_fd < 0)
+		bail_fr_error("fr_packet_list_fd_set");
 
 	/* wait a configured time (default: 1.0s) */
 	tv.tv_sec  = server->timeout / 1000;
@@ -435,25 +414,16 @@ static int query_one_server(const char *username, const char *password,
 	}
 
 	reply = fr_packet_list_recv(pl, &set);
-	if (!reply) {
-		error("received bad packet: %s", fr_strerror());
-		rc = -1;
-		goto done;
-	}
+	if (!reply)
+		bail_fr_error("received bad packet")
 
-	if (rad_verify(reply, request, server->secret) < 0) {
-		debug_fr_error("rad_verify");
-		rc = -1;
-		goto done;
-	}
+	if (rad_verify(reply, request, server->secret) < 0)
+		bail_fr_error("rad_verify");
 
 	fr_packet_list_yank(pl, request);
 
-	if (rad_decode(reply, request, server->secret) != 0) {
-		debug_fr_error("rad_decode");
-		rc = -1;
-		goto done;
-	}
+	if (rad_decode(reply, request, server->secret) != 0)
+		bail_fr_error("rad_decode");
 
 	if(reply->code == PW_AUTHENTICATION_ACK) {
 		debug("  -> ACK: Authentication was successful.");
@@ -484,11 +454,8 @@ int rad_auth(const char *username, const char *password,
 	int try;
 
 	debug("initiating dictionary '%s'...", RADIUS_DICTIONARY);
-	if (dict_init(".", RADIUS_DICTIONARY) < 0) {
-		debug_fr_error("dict_init");
-		rc = -1;
-		goto done;
-	}
+	if (dict_init(".", RADIUS_DICTIONARY) < 0)
+		bail_fr_error("dict_init");
 
 	debug("parsing servers from config file '%s'", config);
 	serverlist = parse_servers(config);
