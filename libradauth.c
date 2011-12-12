@@ -346,18 +346,21 @@ static int query_one_server(const char *username, const char *password,
 		bail_fr_error("fr_packet_list_id_alloc");
 
 	/* construct value pairs */
-	vp = pairmake("User-Name", username, 0);
+	if(!(vp = pairmake("User-Name", username, 0)))
+		bail_fr_error("pairmake");
 	pairadd(&request->vps, vp);
 
 	if(server->method == PAP) {
 		debug("  -> Using PAP-scrambled passwords");
 		/* encryption of the packet will happen *automatically* just
 		 * before sending the packet via make_passwd() */
-		vp = pairmake("User-Password", password, 0);
+		if(!(vp = pairmake("User-Password", password, 0)))
+			bail_fr_error("pairmake");
 		vp->flags.encrypt = FLAG_ENCRYPT_USER_PASSWORD;
 	} else if(server->method == CHAP) {
 		debug("  -> Using CHAP-scrambled passwords");
-		vp = pairmake("CHAP-Password", password, 0);
+		if(!(vp = pairmake("CHAP-Password", password, 0)))
+			bail_fr_error("pairmake");
 		strlcpy(vp->vp_strvalue, password,
 			sizeof(vp->vp_strvalue));
 		vp->length = strlen(vp->vp_strvalue);
@@ -381,10 +384,12 @@ static int query_one_server(const char *username, const char *password,
 		rc = -1;
 		goto done;
 	}
-	vp = pairmake("NAS-IP-Address", "0.0.0.0", 0); /* dummy */
-	vp->vp_ipaddr = src.sin_addr.s_addr;
+	if(!(vp = pairmake("NAS-IP-Address", "0.0.0.0", 0))) /* dummy */
+		bail_fr_error("pairmake");
+	vp->vp_ipaddr = src.sin_addr.s_addr; /* real address */
 	pairadd(&request->vps, vp);
-	vp = pairmake("NAS-Port", "10", 0);
+	if(!(vp = pairmake("NAS-Port", "10", 0)))
+		bail_fr_error("pairmake");
 	pairadd(&request->vps, vp);
 
 	debug("  -> Sending packet via %s:%d...",
@@ -392,8 +397,6 @@ static int query_one_server(const char *username, const char *password,
 
 	if(rad_send(request, NULL, server->secret) == -1)
 		bail_fr_error("rad_send");
-
-	/* GESENDET! :-) */
 
 	/* And wait for reply, timing out as necessary */
 	FD_ZERO(&set);
@@ -426,8 +429,8 @@ static int query_one_server(const char *username, const char *password,
 		bail_fr_error("rad_decode");
 
 	if(reply->code == PW_AUTHENTICATION_ACK) {
-		debug("  -> ACK: Authentication was successful.");
 		rc = 0;
+		debug("  -> ACK: Authentication was successful.");
 	}
 
 	if(reply->code == PW_AUTHENTICATION_REJECT) {
