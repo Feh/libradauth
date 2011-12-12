@@ -57,7 +57,7 @@ static struct rad_server *parse_servers(const char *config);
 static void server_add_field(struct rad_server *s,
 	const char *k, const char *v);
 static int query_one_server(const char *username, const char *password,
-	struct rad_server *server);
+	struct rad_server *server, const char *vps);
 static struct rad_server *sort_servers(struct rad_server *list, int try);
 static int cmp_prio_rand (const void *, const void *);
 static void free_server_list(struct rad_server *head);
@@ -300,7 +300,7 @@ static int ipaddr_from_server(struct in_addr *addr, const char *host)
 }
 
 static int query_one_server(const char *username, const char *password,
-		struct rad_server *server)
+		struct rad_server *server, const char *vps)
 {
 	struct timeval tv;
 	volatile int max_fd;
@@ -394,6 +394,9 @@ static int query_one_server(const char *username, const char *password,
 		bail_fr_error("pairmake");
 	pairadd(&request->vps, vp);
 
+	if(vps)
+		userparse(vps, &request->vps);
+
 	debug("  -> Sending packet via %s:%d...",
 		inet_ntoa(src.sin_addr), ntohs(src.sin_port));
 
@@ -451,8 +454,15 @@ static int query_one_server(const char *username, const char *password,
 	return rc;
 }
 
+int rad_auth_simple(const char *username, const char *password,
+		int retries, const char *config)
+{
+	return rad_auth(username, password, retries, config, NULL, NULL);
+}
+
 int rad_auth(const char *username, const char *password,
-		int retries, const char *config, const char *userdict[2])
+		int retries, const char *config, const char *userdict[2],
+		const char *vps)
 {
 	struct rad_server *serverlist = 0, *server = 0;
 	const char **dict;
@@ -480,7 +490,7 @@ int rad_auth(const char *username, const char *password,
 		server = serverlist = sort_servers(serverlist, try);
 		do {
 			debug("Querying server: %s:%d", server->name, server->port);
-			rc = query_one_server(username, password, server);
+			rc = query_one_server(username, password, server, vps);
 			if(rc >= 0)
 				goto done;
 		} while((server = server->next) != NULL);

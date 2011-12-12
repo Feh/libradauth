@@ -2,12 +2,32 @@
     file for more information. Note, that *all* servers in that file
     will be queried sequentially, until the first one answers.
 
-2.) Call rad_auth(user, pw, retries, config, dict) from your program,
-    where `user', `pw' and `config' are char* strings, and retries is
-    an integer specifying how many times the authentication should be
-    tried. If it fails for the first round, all servers will be tried
-    again. The `dict' argument must be a (const char *[2]) array. If
+2.) Be sure you have a RADIUS dictionary. It should at least include
+    the attributes "User-Name", "User-Password", "CHAP-Password",
+    "Nas-IP-Address", "NAS-Port", as they are mandatory for a RFC 2865
+    compliant RADIUS packet. The default search path is defined by the
+    FreeRADIUS installation (specifically in freeradius/radpaths.h).
+
+3.) Call
+
+        rad_auth_simple(user, pw, retries, config)
+
+    or, alternatively,
+
+        rad_auth(user, pw, retries, config, dict, vps)
+
+    from your program, where `user', `pw' and `config' are char*
+    strings, and retries is an integer specifying how many times the
+    authentication should be tried. If it fails for the first round,
+    all servers will be tried again.
+
+    The `dict' argument must be a (const char *[2]) array. If
     you specify NULL here, the library will try the default path.
+
+    The `vps' argument is a simple char* string and may contain
+    additional value pairs that will be added to the request. Multiple
+    VPs can be separated by commas. Be aware that invalid attributes
+    will be silently discarded.
 
     Refer to `radauth_test.c' for a complete example.
 
@@ -18,7 +38,7 @@
        -1       | an error happened; look at rad_auth_errstr()
        -2       | no servers could be reached
 
-2a.) If things don't work, re-compile the library with -DDEBUG, or via
+3a.) If things don't work, re-compile the library with -DDEBUG, or via
     `make clean && make DEBUG=1'. You should get tons of output, then.
 
 3.) Make sure to link in *both* the FreeRADIUS and this library, thus:

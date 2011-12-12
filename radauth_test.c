@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include "libradauth.h"
 
 int main(int argc, char *argv[])
 {
 	int rc;
-	char username[32], password[32];
+	char username[32], password[32], hostname[32];
+	char vp[32 + 22];
 	const char *my_dict[2] = { ".", "dictionary" };
 
 	if(argc != 3) {
@@ -16,7 +18,11 @@ int main(int argc, char *argv[])
 		strncpy(password, argv[2], 31);
 	}
 
-	rc = rad_auth(username, password, 3, "./servers", my_dict);
+	gethostname(hostname, 31);
+	snprintf(vp, sizeof(vp), "Calling-Station-ID = %s", hostname);
+
+	rc = rad_auth(username, password, 3, "./servers",
+		my_dict, vp);
 	if(rc == -1)
 		fprintf(stderr, "Cannot authenticate: %s\n",
 				rad_auth_errstr());
