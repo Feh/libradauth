@@ -8,16 +8,17 @@ else
 DGLAGS =
 endif
 
-FREERADIUS = -L/usr/lib/freeradius -Wl,-rpath,/usr/lib/freeradius \
-	-I/usr/include/freeradius -lfreeradius-radius
-LIBS = $(FREERADIUS) -lpthread
+FREERADIUS_CPPFLAGS = -I/usr/include/freeradius
+FREERADIUS_LDFLAGS = -L/usr/lib/freeradius -Wl,-rpath,/usr/lib/freeradius
+FREERADIUS_LIBS = -lfreeradius-radius -lpthread
 
 radauth_test: radauth_test.c
-	$(GCC)gcc $(DFLAGS) $(LIBS) -Wl,-rpath,./ -L. -lradauth -o radauth_test radauth_test.c
+	$(GCC)gcc $(DFLAGS) -Wl,-rpath,./ -L. -lradauth -o radauth_test radauth_test.c
 libradauth.o: libradauth.c libradauth.h
-	$(GCC)gcc $(DFLAGS) $(LIBS) -fPIC -c libradauth.c
+	$(GCC)gcc $(DFLAGS) $(FREERADIUS_CPPFLAGS) -fPIC -c libradauth.c
 libradauth.so: libradauth.o
-	$(GCC)gcc -shared -o libradauth.so libradauth.o
+	$(GCC)gcc $(FREERADIUS_LDFLAGS) -shared -o libradauth.so libradauth.o \
+	    $(FREERADIUS_LIBS)
 
 clean:
 	rm -f libradauth.o libradauth.so radauth_test

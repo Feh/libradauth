@@ -40,7 +40,3 @@
 
 3a.) If things don't work, re-compile the library with -DDEBUG, or via
     `make clean && make DEBUG=1'. You should get tons of output, then.
-
-3.) Make sure to link in *both* the FreeRADIUS and this library, thus:
-    -lfreeradius-radius -lradauth. You may optionally want to specify
-    the paths to include and library files via -I/-L.
