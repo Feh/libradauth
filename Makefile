@@ -1,4 +1,5 @@
 GCC = @echo 'CC  '$@;
+LD = @echo 'LD  '$@;
 
 DEFAULT: libradauth.so radauth_test
 
@@ -9,7 +10,7 @@ DGLAGS =
 endif
 
 FREERADIUS_CPPFLAGS = -I/usr/include/freeradius
-FREERADIUS_LDFLAGS = -L/usr/lib/freeradius -Wl,-rpath,/usr/lib/freeradius
+FREERADIUS_LDFLAGS = -L/usr/lib/freeradius -rpath /usr/lib/freeradius
 FREERADIUS_LIBS = -lfreeradius-radius -lpthread
 
 radauth_test: radauth_test.c Makefile
@@ -17,7 +18,7 @@ radauth_test: radauth_test.c Makefile
 libradauth.o: libradauth.c libradauth.h Makefile
 	$(GCC)gcc $(DFLAGS) $(FREERADIUS_CPPFLAGS) -fPIC -c libradauth.c
 libradauth.so: libradauth.o
-	$(GCC)gcc $(FREERADIUS_LDFLAGS) -shared -o libradauth.so libradauth.o \
+	$(LD)ld $(FREERADIUS_LDFLAGS) -shared -o libradauth.so libradauth.o \
 	    $(FREERADIUS_LIBS)
 
 clean:
