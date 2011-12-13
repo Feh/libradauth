@@ -106,7 +106,7 @@ static struct rad_server *parse_servers(const char *config)
 
 		brace = strrchr(buf, '}');
 		if(brace && (brace == buf ||
-				*(brace-1) == ' ' && *(brace-1) == '\t')) {
+				*(brace-1) == ' ' || *(brace-1) == '\t')) {
 			*(brace+1) = '\0'; /* statement terminated */
 			strncat(stm, buf, b_len);
 			s_len += buf - brace + 1;
