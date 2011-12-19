@@ -97,16 +97,21 @@ static struct rad_server *parse_servers(const char *config)
 			continue;
 
 		if(s_len + b_len + 1 > s_size) {
+			char *tmp;
+
 			debug("Resizing buffer to make the statement fit");
 			s_size += BUFSIZE;
-			stm = realloc(stm, s_size);
-			if(!stm)
+			tmp = realloc(stm, s_size);
+			if(!tmp) {
+				free(stm);
 				return NULL;
+			}
+			stm = tmp;
 		}
 
 		brace = strrchr(buf, '}');
 		if(brace && (brace == buf ||
-				*(brace-1) == ' ' && *(brace-1) == '\t')) {
+				*(brace-1) == ' ' || *(brace-1) == '\t')) {
 			*(brace+1) = '\0'; /* statement terminated */
 			strncat(stm, buf, b_len);
 			s_len += buf - brace + 1;
