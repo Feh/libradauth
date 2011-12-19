@@ -311,7 +311,7 @@ static int query_one_server(const char *username, const char *password,
 	volatile int max_fd;
 	fd_set set;
 	struct sockaddr_in src;
-	int src_size = sizeof(src);
+	socklen_t src_size = sizeof(src);
 	int rc = -2;
 
 	fr_ipaddr_t client;

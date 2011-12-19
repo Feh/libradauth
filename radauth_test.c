@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
 
 	if(argc != 3) {
 		fprintf(stdout, "<user> <pw>: ");
-		fscanf(stdin, "%31s %31s", &username, &password);
+		fscanf(stdin, "%31s %31s", username, password);
 	} else {
 		strncpy(username, argv[1], 31);
 		strncpy(password, argv[2], 31);
