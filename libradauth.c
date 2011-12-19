@@ -208,7 +208,7 @@ static struct rad_server *parse_one_server(char *buf)
 {
 	struct rad_server *s;
 	const char delim[4] = " \t\n";
-	char *t, *v;
+	char *t, *v, *rest;
 	char token[64];
 
 	s = malloc(sizeof(*s));
@@ -217,7 +217,7 @@ static struct rad_server *parse_one_server(char *buf)
 		return NULL;
 	}
 
-	if(!(t = strtok(buf, delim))) {
+	if(!(t = strtok_r(buf, delim, &rest))) {
 		free(s);
 		return NULL;
 	}
@@ -232,16 +232,16 @@ static struct rad_server *parse_one_server(char *buf)
 	s->method = NONE;
 	strcpy(s->bind, "0.0.0.0");
 
-	if(!(t = strtok(NULL, delim)) || *t != '{') {
+	if(!(t = strtok_r(NULL, delim, &rest)) || *t != '{') {
 		debug("could not find '{' after statement name!");
 		free(s);
 		return NULL;
 	}
 
-	while((t = strtok(NULL, delim)) && *t != '}') {
+	while((t = strtok_r(NULL, delim, &rest)) && *t != '}') {
 		strlcpy(token, t, 64);
-		v = strtok(NULL, delim);
-		server_add_field(s, token, v);
+		if((v = strtok_r(NULL, delim, &rest)))
+			server_add_field(s, token, v);
 	}
 
 	if(!*(s->host) || s->method == NONE) {
