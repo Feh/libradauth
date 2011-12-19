@@ -10,19 +10,20 @@
 
 3.) Call
 
-        rad_auth_simple(user, pw, retries, config)
+        rad_auth_simple(user, pw, config)
 
     or, alternatively,
 
         rad_auth(user, pw, retries, config, dict, vps)
 
     from your program, where `user', `pw' and `config' are char*
-    strings, and retries is an integer specifying how many times the
-    authentication should be tried. If it fails for the first round,
-    all servers will be tried again.
+    strings. All servers in the config file will be tried until any of
+    them answers. This will be tried three times in total.
 
-    The `dict' argument must be a (const char *[2]) array. If
-    you specify NULL here, the library will try the default path.
+    `retries' is an integer specifying how many times the
+    authentication should be tried. The `dict' argument must be a
+    (const char *[2]) array. If you specify NULL here, the library
+    will try the default path.
 
     The `vps' argument is a simple char* string and may contain
     additional value pairs that will be added to the request. Multiple

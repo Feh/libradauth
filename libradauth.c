@@ -460,9 +460,9 @@ static int query_one_server(const char *username, const char *password,
 }
 
 int rad_auth_simple(const char *username, const char *password,
-		int retries, const char *config)
+		const char *config)
 {
-	return rad_auth(username, password, retries, config, NULL, NULL);
+	return rad_auth(username, password, 3, config, NULL, NULL);
 }
 
 int rad_auth(const char *username, const char *password,
