@@ -22,8 +22,8 @@
 
     `retries' is an integer specifying how many times the
     authentication should be tried. The `dict' argument must be a
-    (const char *[2]) array. If you specify NULL here, the library
-    will try the default path.
+    (const char *[2]) array. If you specify NULL here, a temporary
+    file containig an RFC 2865 compliant dictionary will be created.
 
     The `vps' argument is a simple char* string and may contain
     additional value pairs that will be added to the request. Multiple

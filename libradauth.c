@@ -2,12 +2,14 @@
 #include <string.h>
 #include <stdlib.h>
 #include <netdb.h>
+#include <limits.h>
 
 #include <libradius.h>
 #include <radpaths.h>
 #include <conf.h>
 
 #include "libradauth.h"
+#include "libradauth-dict.h"
 
 #define strlcpy(A,B,C) strncpy(A,B,C), *(A+(C)-1)='\0'
 #define BUFSIZE 1024
@@ -42,8 +44,6 @@ struct rad_server {
 	enum { NONE, PAP, CHAP } method;
 	struct rad_server *next;
 };
-
-static const char *rad_default_dict[2] = { RADIUS_DIR, RADIUS_DICTIONARY };
 
 static char last_error[BUFSIZE] = "";
 
@@ -290,6 +290,47 @@ static void free_server_list(struct rad_server *head)
 	} while(cur);
 }
 
+static char *create_tmp_dict(void)
+{
+	FILE *fp;
+	int rc;
+	char *tmp;
+	char *slash;
+
+	if(!(tmp = malloc(PATH_MAX * sizeof (char))))
+		return NULL;
+	sprintf(tmp, "%s/dictionary.XXXXXX", P_tmpdir);
+	if(mkstemp(tmp) == -1) {
+		free(tmp);
+		error("cannot create tempfile for dictionary!");
+		return NULL;
+	}
+	if(!(fp = fopen(tmp, "w"))) {
+		free(tmp);
+		error("cannot open temporary dictionary!");
+		return NULL;
+	}
+	fwrite(dictionary_rfc2865, strlen(dictionary_rfc2865),
+		sizeof (char), fp);
+	fclose(fp);
+
+	slash = strrchr(tmp, '/');
+	if(slash) {
+		*slash = '\0';
+		rc = dict_init(tmp, slash+1);
+		*slash = '/';
+	} else {
+		rc = dict_init(".", tmp);
+	}
+
+	if(rc == -1) {
+		free(tmp);
+		return NULL;
+	}
+
+	return tmp;
+}
+
 static int ipaddr_from_server(struct in_addr *addr, const char *host)
 {
 	struct hostent *res;
@@ -470,16 +511,14 @@ int rad_auth(const char *username, const char *password,
 		const char *vps)
 {
 	struct rad_server *serverlist = 0, *server = 0;
-	const char **dict;
+	char *dict = NULL;
 	int rc = -1;
 	int try;
 
-	if(userdict)
-		dict = userdict;
-	else
-		dict = rad_default_dict;
-	debug("initiating dictionary '%s/%s'...", dict[0], dict[1]);
-	if (dict_init(dict[0], dict[1]) < 0)
+	if(userdict) {
+		if (dict_init(userdict[0], userdict[1]) < 0)
+			bail_fr_error("dict_init");
+	} else if(!(dict = create_tmp_dict()))
 		bail_fr_error("dict_init");
 
 	debug("parsing servers from config file '%s'", config);
@@ -506,6 +545,11 @@ int rad_auth(const char *username, const char *password,
 	done:
 	if(serverlist)
 		free_server_list(serverlist);
+	if(dict) {
+		debug("unlinking temporary dictionary '%s'...", dict);
+		unlink(dict);
+		free(dict);
+	}
 
 	return rc;
 }
