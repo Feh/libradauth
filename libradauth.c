@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <errno.h>
 #include <string.h>
 #include <stdlib.h>
 #include <netdb.h>
@@ -61,6 +62,8 @@ static int query_one_server(const char *username, const char *password,
 static struct rad_server *sort_servers(struct rad_server *list, int try);
 static int cmp_prio_rand (const void *, const void *);
 static void free_server_list(struct rad_server *head);
+static int initialize_dictionary(char *dict, const char *userdict);
+static int create_tmp_dict(char *dict);
 static int ipaddr_from_server(struct in_addr *addr, const char *host);
 
 static struct rad_server *parse_servers(const char *config)
@@ -290,45 +293,55 @@ static void free_server_list(struct rad_server *head)
 	} while(cur);
 }
 
-static char *create_tmp_dict(void)
+static int initialize_dictionary(char *dict, const char *userdict)
+{
+	char *slash;
+	int rc;
+
+	if(userdict) {
+		debug("Initializing user dictionary '%s'", userdict);
+		strlcpy(dict, userdict, PATH_MAX-1);
+	} else {
+		debug("Initializing temporary dictionary at '%s'...", P_tmpdir);
+		if(create_tmp_dict(dict) == -1)
+			return -1;
+		debug("Done, it's at '%s'", dict);
+	}
+
+	/* actually initialize */
+	slash = strrchr(dict, '/');
+	if(slash) {
+		*slash = '\0';
+		rc = dict_init(dict, slash+1);
+		*slash = '/';
+	} else {
+		rc = dict_init(".", dict);
+	}
+
+	return rc;
+}
+
+static int create_tmp_dict(char *dict)
 {
 	FILE *fp;
-	int rc;
-	char *tmp;
-	char *slash;
+	char errstr[1024];
 
-	if(!(tmp = malloc(PATH_MAX * sizeof (char))))
-		return NULL;
-	sprintf(tmp, "%s/dictionary.XXXXXX", P_tmpdir);
-	if(mkstemp(tmp) == -1) {
-		free(tmp);
-		error("cannot create tempfile for dictionary!");
-		return NULL;
+	sprintf(dict, "%s/dictionary.XXXXXX", P_tmpdir);
+	if(mkstemp(dict) == -1) {
+		strerror_r(errno, errstr, 1024);
+		error("cannot create tempfile for dictionary '%s': %s", dict, errstr);
+		return -1;
 	}
-	if(!(fp = fopen(tmp, "w"))) {
-		free(tmp);
-		error("cannot open temporary dictionary!");
-		return NULL;
+	if(!(fp = fopen(dict, "w"))) {
+		strerror_r(errno, errstr, 1024);
+		error("cannot open temporary dictionary '%s': %s", dict, errstr);
+		return -1;
 	}
 	fwrite(dictionary_rfc2865, strlen(dictionary_rfc2865),
 		sizeof (char), fp);
 	fclose(fp);
 
-	slash = strrchr(tmp, '/');
-	if(slash) {
-		*slash = '\0';
-		rc = dict_init(tmp, slash+1);
-		*slash = '/';
-	} else {
-		rc = dict_init(".", tmp);
-	}
-
-	if(rc == -1) {
-		free(tmp);
-		return NULL;
-	}
-
-	return tmp;
+	return 0;
 }
 
 static int ipaddr_from_server(struct in_addr *addr, const char *host)
@@ -507,18 +520,15 @@ int rad_auth_simple(const char *username, const char *password,
 }
 
 int rad_auth(const char *username, const char *password,
-		int retries, const char *config, const char *userdict[2],
+		int retries, const char *config, const char *userdict,
 		const char *vps)
 {
 	struct rad_server *serverlist = 0, *server = 0;
-	char *dict = NULL;
+	char dict[PATH_MAX];
 	int rc = -1;
 	int try;
 
-	if(userdict) {
-		if (dict_init(userdict[0], userdict[1]) < 0)
-			bail_fr_error("dict_init");
-	} else if(!(dict = create_tmp_dict()))
+	if(initialize_dictionary(dict, userdict) < 0)
 		bail_fr_error("dict_init");
 
 	debug("parsing servers from config file '%s'", config);
@@ -545,10 +555,9 @@ int rad_auth(const char *username, const char *password,
 	done:
 	if(serverlist)
 		free_server_list(serverlist);
-	if(dict) {
+	if(!userdict) {
 		debug("unlinking temporary dictionary '%s'...", dict);
 		unlink(dict);
-		free(dict);
 	}
 
 	return rc;
