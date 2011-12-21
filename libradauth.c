@@ -42,7 +42,7 @@ struct rad_server {
 	int timeout;
 	char bind[64];
 	char secret[64];
-	enum { NONE, PAP, CHAP } method;
+	enum { UNKNOWN, PAP, CHAP } method;
 	struct rad_server *next;
 };
 
@@ -232,7 +232,7 @@ static struct rad_server *parse_one_server(char *buf)
 	s->port = 1812;
 	s->priority = 0;
 	s->timeout = 1000; /* 1 second */
-	s->method = NONE;
+	s->method = CHAP;
 	strcpy(s->bind, "0.0.0.0");
 
 	if(!(t = strtok_r(NULL, delim, &rest)) || *t != '{') {
@@ -247,9 +247,8 @@ static struct rad_server *parse_one_server(char *buf)
 			server_add_field(s, token, v);
 	}
 
-	if(!*(s->host) || s->method == NONE) {
-		debug("%s: error in format: at least 'host' "
-			"or 'method' are missing!", s->name);
+	if(!*(s->host) || s->method == UNKNOWN) {
+		debug("%s: At least a 'host' is needed!", s->name);
 		free(s);
 		return NULL;
 	}
@@ -277,6 +276,8 @@ static void server_add_field(struct rad_server *s, const char *k, const char *v)
 			s->method = CHAP;
 		else if(!strcasecmp(v, "PAP"))
 			s->method = PAP;
+		else
+			s->method = UNKNOWN;
 	} else {
 		debug("%s: wrong or unknown key: %s = %s", s->name, k, v);
 	}

@@ -1,15 +1,16 @@
 # The RADIUS servers to query
 
-# Every server must at least contain the "host" and "method" key.
+# Every server must at least contain the "host" key.
+#
 # It is referred to by its name (the string before the opening curly
 # brace). Thus, you can define the same host multiple times with
 # different setting if you use distinct names.
 #
 # The following keys are recognized:
 #
-#  host      hostname or ip address to be used
+#  host      hostname or ip address to be used [REQUIRED!]
 #  port      port to be used [default: 1812]
-#  method    either one of PAP or CHAP
+#  method    either one of PAP or CHAP [default: CHAP]
 #  bind      address or host name to bind to [default: 0.0.0.0]
 #  secret    RADIUS shared secret [default: none]
 #  priority  an integer; bigger means more important [default: 0]
@@ -39,5 +40,4 @@ radius2 {
 radius-backup {
         host        radius3.example.com
         secret      v3rYs3cr1t
-        method      CHAP
 }
