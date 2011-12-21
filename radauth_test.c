@@ -22,12 +22,9 @@ int main(int argc, char *argv[])
 
 	rc = rad_auth(username, password, 3, "servers",
 		"dictionary.rfc2865", vp);
-	if(rc == -1)
+	if(rc < 0)
 		fprintf(stderr, "Cannot authenticate: %s\n",
 				rad_auth_errstr());
-	if(rc == -2)
-		fprintf(stderr, "A generic error happened, "
-			"no servers could be reached.\n");
 	return rc;
 }
 

@@ -20,8 +20,8 @@
 #define debug(fmt, ...) \
 	fprintf(stderr, LIBNAME fmt "\n", ##__VA_ARGS__)
 #define error(fmt, ...) \
-	snprintf(last_error, BUFSIZE, fmt, ##__VA_ARGS__); \
-	debug("%s", last_error)
+	{ snprintf(last_error, BUFSIZE, fmt, ##__VA_ARGS__); \
+	debug("%s", last_error); }
 #define debug_fr_error(what) \
 	error(what ": ERROR: %s", fr_strerror())
 #else
@@ -550,6 +550,9 @@ int rad_auth(const char *username, const char *password,
 		} while((server = server->next) != NULL);
 		debug("FAILED to reach any of the servers at try #%d/%d. %s",
 			try, retries, try == retries ? "Giving up." : "Trying again...");
+		if(try == retries && rc == -2)
+			snprintf(last_error, BUFSIZE, "Timeout: No authentication "
+				"servers could be reached after %d tries.", try);
 	}
 
 	done:
