@@ -6,17 +6,19 @@ else
 DGLAGS =
 endif
 
+SONAME = libradauth.so.0
 FREERADIUS_CPPFLAGS = -I/usr/include/freeradius
-FREERADIUS_LDFLAGS = -L/usr/lib/freeradius -rpath /usr/lib/freeradius
+FREERADIUS_LDFLAGS = -L/usr/lib/freeradius -rpath /usr/lib/freeradius -soname=$(SONAME)
 FREERADIUS_LIBS = -lfreeradius-radius -lpthread
 
 radauth_test: radauth_test.c Makefile
-	gcc -Wall $(DFLAGS) -Wl,-rpath,./ -L. -lradauth -o radauth_test radauth_test.c
+	gcc -Wall $(DFLAGS) -L. -lradauth -o radauth_test radauth_test.c
 libradauth.o: libradauth.c libradauth.h Makefile
 	gcc -Wall $(DFLAGS) $(FREERADIUS_CPPFLAGS) -fPIC -c libradauth.c
 libradauth.so: libradauth.o
-	ld $(FREERADIUS_LDFLAGS) -shared -o libradauth.so libradauth.o \
+	ld $(FREERADIUS_LDFLAGS) -shared -o $(SONAME) libradauth.o \
 	    $(FREERADIUS_LIBS)
+	ln -s $(SONAME) libradauth.so
 
 clean:
-	rm -f libradauth.o libradauth.so radauth_test
+	rm -f libradauth.o libradauth.so radauth_test $(SONAME)
