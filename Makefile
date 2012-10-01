@@ -9,7 +9,7 @@ endif
 SONAME = libradauth.so.0
 FREERADIUS_CPPFLAGS = -I/usr/include/freeradius
 FREERADIUS_LDFLAGS = -L/usr/lib/freeradius -rpath /usr/lib/freeradius -soname=$(SONAME)
-FREERADIUS_LIBS = -lfreeradius-radius -lpthread
+FREERADIUS_LIBS = -lfreeradius-radius -lpthread -lc
 
 radauth_test: radauth_test.c Makefile
 	gcc -Wall $(DFLAGS) -L. -lradauth -o radauth_test radauth_test.c
