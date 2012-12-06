@@ -41,3 +41,11 @@
 
 3a.) If things don't work, re-compile the library with -DDEBUG, or via
     `make clean && make DEBUG=1'. You should get tons of output, then.
+    Alternatively, and this is recommended, you can set up the
+    environment variable `LIBRADAUTH_DEBUG` to achieve this. If set to
+    0, debugging is disabled. Setting it to 1 will send debugging info
+    to standard error. If set to anything else, that string will be
+    interpreted as a file name and the debug information will be
+    appended to the file, creating it if necessary. For example:
+
+    $ env LIBRADAUTH_DEBUG=/dev/shm/libradauth-debug.log ./my-application

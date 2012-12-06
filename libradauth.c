@@ -16,21 +16,18 @@
 #define BUFSIZE 1024
 
 #define LIBNAME "[libradauth] "
-#ifdef DEBUG
+#define DEBUG_ENV_VAR "LIBRADAUTH_DEBUG"
+
+static FILE *debugfp;
+static int debug = 0;
+
 #define debug(fmt, ...) \
-	fprintf(stderr, LIBNAME fmt "\n", ##__VA_ARGS__)
+	if(debug) fprintf(debugfp, LIBNAME fmt "\n", ##__VA_ARGS__)
 #define error(fmt, ...) \
 	{ snprintf(last_error, BUFSIZE, fmt, ##__VA_ARGS__); \
 	debug("%s", last_error); }
 #define debug_fr_error(what) \
-	error(what ": ERROR: %s", fr_strerror())
-#else
-#define debug(fmt, ...)
-#define debug_fr_error(what) \
-	error("%s: %s", what, fr_strerror())
-#define error(fmt, ...) \
-	snprintf(last_error, BUFSIZE, fmt, ##__VA_ARGS__)
-#endif
+	error(what ": %s%s", debug ? "ERROR: " : "", fr_strerror())
 #define bail_fr_error(what) { debug_fr_error(what); rc = -1; goto done; }
 
 struct rad_server;
@@ -65,6 +62,52 @@ static void free_server_list(struct rad_server *head);
 static int initialize_dictionary(char *dict, const char *userdict);
 static int create_tmp_dict(char *dict);
 static int ipaddr_from_server(struct in_addr *addr, const char *host);
+static void setup_debugging(void);
+static void clean_up_debugging(void);
+
+static void setup_debugging(void)
+{
+	char *v;
+	char errstr[1024];
+	FILE *fp;
+
+#ifdef DEBUG
+	debug = 1;
+#endif
+	debugfp = stderr;
+
+	if((v = getenv(DEBUG_ENV_VAR)) == NULL)
+		return;
+
+	debug = 1;
+	if(!strcmp(v, "1"))
+		return; /* log to stderr */
+	if(!strcmp(v, "0")) {
+		debug = 0;
+		return;
+	}
+
+	/* try to log to the specified file */
+	if((fp = fopen(v, "a")) != NULL) {
+		debugfp = fp;
+	} else {
+		strerror_r(errno, errstr, 1024);
+		debug("Warning: Cannot open '%s' for appending: %s; "
+			"logging to stderr instead", v, errstr);
+	}
+
+	return;
+}
+
+static void clean_up_debugging(void)
+{
+	if(!debug)
+		return;
+	if(debugfp == stderr)
+		return;
+	fclose(debugfp);
+	debugfp = stderr;
+}
 
 static struct rad_server *parse_servers(const char *config)
 {
@@ -529,6 +572,8 @@ int rad_auth(const char *username, const char *password,
 	int rc = -1;
 	int try;
 
+	setup_debugging();
+
 	if(initialize_dictionary(dict, userdict) < 0)
 		bail_fr_error("dict_init");
 
@@ -563,6 +608,8 @@ int rad_auth(const char *username, const char *password,
 		debug("unlinking temporary dictionary '%s'...", dict);
 		unlink(dict);
 	}
+
+	clean_up_debugging();
 
 	return rc;
 }
