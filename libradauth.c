@@ -575,7 +575,7 @@ int rad_auth(const char *username, const char *password,
 	setup_debugging();
 
 	if(initialize_dictionary(dict, userdict) < 0)
-		bail_fr_error("dict_init");
+		bail_fr_error("initialize_dictionary");
 
 	debug("parsing servers from config file '%s'", config);
 	serverlist = parse_servers(config);
