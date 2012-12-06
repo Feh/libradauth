@@ -564,7 +564,7 @@ int rad_auth_simple(const char *username, const char *password,
 }
 
 int rad_auth(const char *username, const char *password,
-		int retries, const char *config, const char *userdict,
+		int tries, const char *config, const char *userdict,
 		const char *vps)
 {
 	struct rad_server *serverlist = 0, *server = 0;
@@ -585,8 +585,8 @@ int rad_auth(const char *username, const char *password,
 		goto done;
 	}
 
-	for(try = 1; try <= retries; try++) {
-		debug("ATTEMPT #%d of %d", try, retries);
+	for(try = 1; try <= tries; try++) {
+		debug("ATTEMPT #%d of %d", try, tries);
 		server = serverlist = sort_servers(serverlist, try);
 		do {
 			debug("Querying server: %s:%d", server->name, server->port);
@@ -595,8 +595,8 @@ int rad_auth(const char *username, const char *password,
 				goto done;
 		} while((server = server->next) != NULL);
 		debug("FAILED to reach any of the servers at try #%d/%d. %s",
-			try, retries, try == retries ? "Giving up." : "Trying again...");
-		if(try == retries && rc == -2)
+			try, tries, try == tries ? "Giving up." : "Trying again...");
+		if(try == tries && rc == -2)
 			snprintf(last_error, BUFSIZE, "Timeout: No authentication "
 				"servers could be reached after %d tries.", try);
 	}

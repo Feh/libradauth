@@ -14,13 +14,13 @@
 
     or, alternatively,
 
-        rad_auth(user, pw, retries, config, dict, vps)
+        rad_auth(user, pw, tries, config, dict, vps)
 
     from your program, where `user', `pw' and `config' are char*
     strings. All servers in the config file will be tried until any of
     them answers. This will be tried three times in total.
 
-    `retries' is an integer specifying how many times the
+    `tries' is an integer specifying how many times the
     authentication should be tried. The `dict' argument must point to
     a FreeRADIUS dictionary. If you specify NULL here, a temporary
     file containig an RFC 2865 compliant dictionary will be created.
