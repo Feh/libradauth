@@ -18,7 +18,7 @@ libradauth.o: libradauth.c libradauth.h Makefile
 libradauth.so: libradauth.o
 	ld $(FREERADIUS_LDFLAGS) -shared -o $(SONAME) libradauth.o \
 	    $(FREERADIUS_LIBS)
-	ln -s $(SONAME) libradauth.so
+	ln -sf $(SONAME) libradauth.so
 
 clean:
 	rm -f libradauth.o libradauth.so radauth_test $(SONAME)
