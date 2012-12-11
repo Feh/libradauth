@@ -10,7 +10,7 @@
 #
 #  host      hostname or ip address to be used [REQUIRED!]
 #  port      port to be used [default: 1812]
-#  method    either one of PAP or CHAP [default: CHAP]
+#  method    either one of PAP, CHAP or CUSTOM [default: CHAP]
 #  bind      address or host name to bind to [default: 0.0.0.0]
 #  secret    RADIUS shared secret [default: none]
 #  priority  an integer; bigger means more important [default: 0]

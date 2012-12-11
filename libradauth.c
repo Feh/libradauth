@@ -39,7 +39,7 @@ struct rad_server {
 	int timeout;
 	char bind[64];
 	char secret[64];
-	enum { UNKNOWN, PAP, CHAP } method;
+	enum { UNKNOWN, PAP, CHAP, CUSTOM } method;
 	struct rad_server *next;
 };
 
@@ -183,7 +183,8 @@ static struct rad_server *parse_servers(const char *config)
 		debug("successfully added server '%s': %s:%d "
 			"(prio %d, timeout %dms, method %s)",
 			cur->name, cur->host, cur->port, cur->priority,
-			cur->timeout, cur->method == CHAP ? "CHAP" : "PAP");
+			cur->timeout, cur->method == CHAP ? "CHAP" :
+				(cur->method == PAP ? "PAP" : "CUSTOM"));
 	}
 
 	if(s_len > 0) {
@@ -319,6 +320,8 @@ static void server_add_field(struct rad_server *s, const char *k, const char *v)
 			s->method = CHAP;
 		else if(!strcasecmp(v, "PAP"))
 			s->method = PAP;
+		else if(!strcasecmp(v, "CUSTOM"))
+			s->method = CUSTOM;
 		else
 			s->method = UNKNOWN;
 	} else {
@@ -462,6 +465,7 @@ static int query_one_server(const char *username, const char *password,
 		if(!(vp = pairmake("User-Password", password, 0)))
 			bail_fr_error("pairmake");
 		vp->flags.encrypt = FLAG_ENCRYPT_USER_PASSWORD;
+		pairadd(&request->vps, vp);
 	} else if(server->method == CHAP) {
 		debug("  -> Using CHAP-scrambled passwords");
 		if(!(vp = pairmake("CHAP-Password", password, 0)))
@@ -471,8 +475,10 @@ static int query_one_server(const char *username, const char *password,
 		vp->length = strlen(vp->vp_strvalue);
 		rad_chap_encode(request, vp->vp_octets, request->id, vp);
 		vp->length = 17;
+		pairadd(&request->vps, vp);
+	} else if(server->method == CUSTOM) {
+		debug("  -> Using custom authentication method");
 	}
-	pairadd(&request->vps, vp); /* the password */
 
 	memset(&src, 0, sizeof(src));
 	if(fr_ipaddr2sockaddr(&(request->dst_ipaddr), server->port,
@@ -511,6 +517,11 @@ static int query_one_server(const char *username, const char *password,
 			vp_prints(buf, BUFSIZE, vp);
 			debug("  -> Added attribute: %s", buf);
 		}
+	}
+
+	if(server->method == CUSTOM && !pairfind(request->vps, PW_STATE)) {
+		debug("WARNING: You MUST use a 'State' attribute with your "
+			"custom authentication mechanism. See RFC 2865, 4.1.");
 	}
 
 	debug("  -> Sending packet via %s:%d...",
