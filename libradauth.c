@@ -499,7 +499,8 @@ static int query_one_server(const char *username, const char *password,
 
 	if(vps) {
 		char buf[BUFSIZE];
-		userparse(vps, &request->vps);
+		if(userparse(vps, &request->vps) == T_OP_INVALID)
+			debug("WARNING: userparse() could not parse all attributes!");
 		for(vp = request->vps; vp; vp = vp->next) {
 			if(vp->attribute == PW_USER_NAME ||
 			   vp->attribute == PW_USER_PASSWORD ||

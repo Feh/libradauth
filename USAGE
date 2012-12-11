@@ -27,8 +27,10 @@
 
     The `vps' argument is a simple char* string and may contain
     additional value pairs that will be added to the request. Multiple
-    VPs can be separated by commas. Be aware that invalid attributes
-    will be silently discarded.
+    VPs can be separated by commas. Be aware that when an invalid
+    attribute or syntax is discovered, parsing will be aborted and all
+    further attributes will be silently discarded. A warning and the
+    list of successfully added attributes is printed in debug mode.
 
     Refer to `radauth_test.c' for a complete example.
 
