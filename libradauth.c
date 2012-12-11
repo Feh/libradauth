@@ -497,8 +497,20 @@ static int query_one_server(const char *username, const char *password,
 		bail_fr_error("pairmake");
 	pairadd(&request->vps, vp);
 
-	if(vps)
+	if(vps) {
+		char buf[BUFSIZE];
 		userparse(vps, &request->vps);
+		for(vp = request->vps; vp; vp = vp->next) {
+			if(vp->attribute == PW_USER_NAME ||
+			   vp->attribute == PW_USER_PASSWORD ||
+			   vp->attribute == PW_CHAP_PASSWORD ||
+			   vp->attribute == PW_NAS_IP_ADDRESS ||
+			   vp->attribute == PW_NAS_PORT)
+				continue;
+			vp_prints(buf, BUFSIZE, vp);
+			debug("  -> Added attribute: %s", buf);
+		}
+	}
 
 	debug("  -> Sending packet via %s:%d...",
 		inet_ntoa(src.sin_addr), ntohs(src.sin_port));
