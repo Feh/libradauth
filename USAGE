@@ -1,3 +1,6 @@
+BASIC USAGE
+===========
+
 1.) Create a server definition file. Refer to the `servers.example'
     file for more information. Note, that *all* servers in that file
     will be queried sequentially, until the first one answers.
@@ -51,3 +54,22 @@
     appended to the file, creating it if necessary. For example:
 
     $ env LIBRADAUTH_DEBUG=/dev/shm/libradauth-debug.log ./my-application
+
+ADVANCED USAGE
+==============
+
+The functions rad_auth_simple() and rad_auth() are actually wrapper
+functions for the rad_auth_cb() function that takes the usual
+parameters user, pw, tries, config, dict. But the two consecutive
+arguments must be a callback function and a void * argument pointer.
+The callback-function must match the signature
+
+    int fn(rad_cb_action action, const void *arg, void *data)
+
+where rad_cb_action is an enum specifying at which stage the function
+is called, thus determining what type of data is supplied in `data'.
+The `arg' argument is the user-supplied last argument to rad_auth_cb().
+
+For an example, refer to the rad_cb_userparse() function libradauth.c
+which implements the callback function used by rad_auth() to add
+value-pairs from a string.
