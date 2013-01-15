@@ -600,6 +600,10 @@ static int rad_cb_userparse(rad_cb_action action, const void *arg, void *data)
 	userpairs = (const char *)arg;
 	vps = (VALUE_PAIR *)data;
 
+	/* do we have value pairs to add? */
+	if(arg == NULL)
+		return 0;
+
 	if(userparse(userpairs, &vps) == T_OP_INVALID)
 		debug("WARNING: userparse() could not parse all attributes!");
 	for(vp = vps; vp; vp = vp->next) {
