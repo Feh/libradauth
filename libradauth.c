@@ -43,10 +43,6 @@ struct rad_server {
 	struct rad_server *next;
 };
 
-typedef enum {
-	RAD_CB_VALUEPAIRS = 0, /* data: (VALUE_PAIR *) */
-} rad_cb_action;
-
 static char last_error[BUFSIZE] = "";
 
 char *rad_auth_errstr(void)
@@ -60,10 +56,6 @@ static void server_add_field(struct rad_server *s,
 	const char *k, const char *v);
 static int query_one_server(const char *username, const char *password,
 	struct rad_server *server, int(*cb)(rad_cb_action, const void *, void *),
-	const void *arg);
-static int rad_auth_cb(const char *username, const char *password,
-	int tries, const char *config, const char *userdict,
-	int(*cb)(rad_cb_action, const void *, void *),
 	const void *arg);
 static int rad_cb_userparse(rad_cb_action action, const void *arg, void *data);
 static struct rad_server *sort_servers(struct rad_server *list, int try);
