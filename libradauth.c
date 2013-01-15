@@ -55,7 +55,9 @@ static struct rad_server *parse_servers(const char *config);
 static void server_add_field(struct rad_server *s,
 	const char *k, const char *v);
 static int query_one_server(const char *username, const char *password,
-	struct rad_server *server, const char *vps);
+	struct rad_server *server, int(*cb)(rad_cb_action, const void *, void *),
+	const void *arg);
+static int rad_cb_userparse(rad_cb_action action, const void *arg, void *data);
 static struct rad_server *sort_servers(struct rad_server *list, int try);
 static int cmp_prio_rand (const void *, const void *);
 static void free_server_list(struct rad_server *head);
@@ -406,7 +408,9 @@ static int ipaddr_from_server(struct in_addr *addr, const char *host)
 }
 
 static int query_one_server(const char *username, const char *password,
-		struct rad_server *server, const char *vps)
+		struct rad_server *server,
+		int(*cb)(rad_cb_action, const void *, void *),
+		const void *arg)
 {
 	struct timeval tv;
 	volatile int max_fd;
@@ -503,20 +507,9 @@ static int query_one_server(const char *username, const char *password,
 		bail_fr_error("pairmake");
 	pairadd(&request->vps, vp);
 
-	if(vps) {
-		char buf[BUFSIZE];
-		if(userparse(vps, &request->vps) == T_OP_INVALID)
-			debug("WARNING: userparse() could not parse all attributes!");
-		for(vp = request->vps; vp; vp = vp->next) {
-			if(vp->attribute == PW_USER_NAME ||
-			   vp->attribute == PW_USER_PASSWORD ||
-			   vp->attribute == PW_CHAP_PASSWORD ||
-			   vp->attribute == PW_NAS_IP_ADDRESS ||
-			   vp->attribute == PW_NAS_PORT)
-				continue;
-			vp_prints(buf, BUFSIZE, vp);
-			debug("  -> Added attribute: %s", buf);
-		}
+	/* callback function */
+	if(cb && cb(RAD_CB_VALUEPAIRS, arg, (void *)request->vps) != 0) {
+		debug("  -> WARNING: Callback returned nonzero exit status!");
 	}
 
 	if(server->method == CUSTOM && !pairfind(request->vps, PW_STATE)) {
@@ -591,6 +584,47 @@ int rad_auth(const char *username, const char *password,
 		int tries, const char *config, const char *userdict,
 		const char *vps)
 {
+	return rad_auth_cb(username, password, tries, config, userdict,
+				rad_cb_userparse, (void *)vps);
+}
+
+static int rad_cb_userparse(rad_cb_action action, const void *arg, void *data)
+{
+	const char *userpairs;
+	VALUE_PAIR *vp, *vps;
+	char buf[BUFSIZE];
+
+	if(action != RAD_CB_VALUEPAIRS)
+		return 0;
+
+	userpairs = (const char *)arg;
+	vps = (VALUE_PAIR *)data;
+
+	/* do we have value pairs to add? */
+	if(arg == NULL)
+		return 0;
+
+	if(userparse(userpairs, &vps) == T_OP_INVALID)
+		debug("WARNING: userparse() could not parse all attributes!");
+	for(vp = vps; vp; vp = vp->next) {
+		if(vp->attribute == PW_USER_NAME ||
+		   vp->attribute == PW_USER_PASSWORD ||
+		   vp->attribute == PW_CHAP_PASSWORD ||
+		   vp->attribute == PW_NAS_IP_ADDRESS ||
+		   vp->attribute == PW_NAS_PORT)
+			continue;
+		vp_prints(buf, BUFSIZE, vp);
+		debug("  -> Added attribute: %s", buf);
+	}
+
+	return 0;
+}
+
+int rad_auth_cb(const char *username, const char *password,
+		int tries, const char *config, const char *userdict,
+		int(*cb)(rad_cb_action, const void *, void *),
+		const void *arg)
+{
 	struct rad_server *serverlist = 0, *server = 0;
 	char dict[PATH_MAX];
 	int rc = -1;
@@ -614,7 +648,7 @@ int rad_auth(const char *username, const char *password,
 		server = serverlist = sort_servers(serverlist, try);
 		do {
 			debug("Querying server: %s:%d", server->name, server->port);
-			rc = query_one_server(username, password, server, vps);
+			rc = query_one_server(username, password, server, cb, arg);
 			if(rc >= 0)
 				goto done;
 		} while((server = server->next) != NULL);
