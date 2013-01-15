@@ -73,3 +73,7 @@ The `arg' argument is the user-supplied last argument to rad_auth_cb().
 For an example, refer to the rad_cb_userparse() function libradauth.c
 which implements the callback function used by rad_auth() to add
 value-pairs from a string.
+
+Note you'll probably have to include FreeRADIUS's header files if you
+want to do anything meaningful, for example casting to VALUE_PAIR or
+calling pairadd();
