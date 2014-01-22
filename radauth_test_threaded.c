@@ -22,8 +22,8 @@ void *auth(void *p) {
 		arg->vp, errmsg);
 	if(rc < 0)
 		fprintf(stderr, "Cannot authenticate: %s\n", errmsg);
-	else if(rc == 0)
-		fprintf(stderr, "Successfully authenticated...\n");
+	else if(rc >= 0)
+		fprintf(stderr, "Received reply = %d\n", rc);
 	return NULL;
 }
 

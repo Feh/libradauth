@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <netdb.h>
 #include <limits.h>
+#include <poll.h>
+#include <assert.h>
 
 #include <libradius.h>
 #include <radpaths.h>
@@ -441,9 +443,9 @@ static int query_one_server(const char *username, const char *password,
 		int(*cb)(rad_cb_action, const void *, void *),
 		const void *arg, char *errmsg)
 {
-	struct timeval tv;
-	volatile int max_fd;
+	int max_fd;
 	fd_set set;
+	struct pollfd pset[1];
 	struct sockaddr_in src;
 	socklen_t src_size = sizeof(src);
 	int rc = -2;
@@ -474,6 +476,13 @@ static int query_one_server(const char *username, const char *password,
 	int sockfd = fr_socket(&client, 0);
 	if(!sockfd)
 		bail_fr_error("fr_socket");
+
+	/* An fd_set can only hold fds up to the *value* of FD_SETSIZE (usually
+	 * 1024). So we assert here that we do not reach this value. It is
+	 * better to die here, than to get a slow, creeping memory corruption
+	 * from FD_SET(). */
+	assert(sockfd < FD_SETSIZE);
+
 	request->sockfd = -1;
 	request->code = PW_AUTHENTICATION_REQUEST;
 
@@ -552,34 +561,31 @@ static int query_one_server(const char *username, const char *password,
 	if(rad_send(request, NULL, server->secret) == -1)
 		bail_fr_error("rad_send");
 
-	/* And wait for reply, timing out as necessary */
+	/* We'll use poll(), but need the same information in an fd_set for
+	 * fr_packet_list_recv() further down */
 	FD_ZERO(&set);
+	FD_SET(sockfd, &set);
+	max_fd = sockfd + 1;
 
-	max_fd = fr_packet_list_fd_set(pl, &set);
-	if (max_fd < 0)
-		bail_fr_error("fr_packet_list_fd_set");
-
-	/* wait a configured time (default: 1.0s) */
-	tv.tv_sec  = server->timeout / 1000;
-	tv.tv_usec = 1000 * (server->timeout % 1000);
-
-	if (select(max_fd, &set, NULL, NULL, &tv) <= 0) {
+	memset(&pset, 0, sizeof(pset));
+	pset[0].fd = sockfd;
+	pset[0].events = POLLIN;
+	if (poll(pset, sizeof(pset)/sizeof(pset[0]), server->timeout) <= 0) {
 		debug("  -> TIMEOUT: no packet received in %dms!",
 			server->timeout);
 		rc = -2;
 		goto done;
 	}
 
-	/* XXX */
-	/* Maybe use: fr_packet_list_find_byreply ? */
 	reply = fr_packet_list_recv(pl, &set);
-	if (!reply)
-		bail_fr_error("received bad packet")
+	if(!reply)
+		bail_fr_error("received bad packet");
 
 	if (rad_verify(reply, request, server->secret) < 0)
 		bail_fr_error("rad_verify");
 
 	fr_packet_list_yank(pl, request);
+	fr_packet_list_id_free(pl, request);
 
 	if (rad_decode(reply, request, server->secret) != 0)
 		bail_fr_error("rad_decode");
@@ -601,6 +607,8 @@ static int query_one_server(const char *username, const char *password,
 		rad_free(&reply);
 	if(pl)
 		fr_packet_list_free(pl);
+	if(sockfd > 0)
+		close(sockfd);
 
 	return rc;
 }
