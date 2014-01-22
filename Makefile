@@ -1,4 +1,4 @@
-DEFAULT: libradauth.so radauth_test
+DEFAULT: libradauth.so radauth_test radauth_test_threaded
 
 ifdef DEBUG
 DFLAGS = -DDEBUG -g
@@ -13,6 +13,8 @@ FREERADIUS_LIBS = -lfreeradius-radius -lpthread -lc
 
 radauth_test: radauth_test.c Makefile
 	gcc -Wall $(DFLAGS) -L. -lradauth -o radauth_test radauth_test.c
+radauth_test_threaded: radauth_test_threaded.c Makefile
+	gcc -Wall $(DFLAGS) -L. -pthread -lradauth -o radauth_test_threaded radauth_test_threaded.c
 libradauth.o: libradauth.c libradauth.h Makefile
 	gcc -Wall $(DFLAGS) $(FREERADIUS_CPPFLAGS) -fPIC -c libradauth.c
 libradauth.so: libradauth.o
