@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <netdb.h>
 #include <limits.h>
+#include <poll.h>
+#include <assert.h>
 
 #include <libradius.h>
 #include <radpaths.h>
@@ -24,7 +26,7 @@ static int debug = 0;
 #define debug(fmt, ...) \
 	if(debug) fprintf(debugfp, LIBNAME fmt "\n", ##__VA_ARGS__)
 #define error(fmt, ...) \
-	{ snprintf(last_error, BUFSIZE, fmt, ##__VA_ARGS__); \
+	{ snprintf(errmsg, BUFSIZE, fmt, ##__VA_ARGS__); \
 	debug("%s", last_error); }
 #define debug_fr_error(what) \
 	error(what ": %s%s", debug ? "ERROR: " : "", fr_strerror())
@@ -43,7 +45,9 @@ struct rad_server {
 	struct rad_server *next;
 };
 
+/* Not re-entrant library functions use this. */
 static char last_error[BUFSIZE] = "";
+static char temp_dict[PATH_MAX];
 
 char *rad_auth_errstr(void)
 {
@@ -51,12 +55,12 @@ char *rad_auth_errstr(void)
 }
 
 static struct rad_server *parse_one_server(char *buf);
-static struct rad_server *parse_servers(const char *config);
+static struct rad_server *parse_servers(const char *config, char *errmsg);
 static void server_add_field(struct rad_server *s,
 	const char *k, const char *v);
 static int query_one_server(const char *username, const char *password,
 	struct rad_server *server, int(*cb)(rad_cb_action, const void *, void *),
-	const void *arg);
+	const void *arg, char *errmsg);
 static int rad_cb_userparse(rad_cb_action action, const void *arg, void *data);
 static struct rad_server *sort_servers(struct rad_server *list, int try);
 static int cmp_prio_rand (const void *, const void *);
@@ -66,6 +70,22 @@ static int create_tmp_dict(char *dict);
 static int ipaddr_from_server(struct in_addr *addr, const char *host);
 static void setup_debugging(void);
 static void clean_up_debugging(void);
+
+void rad_auth_init(const char *userdict) {
+	setup_debugging();
+
+	if(initialize_dictionary(temp_dict, userdict) < 0)
+		fprintf(stderr, "initialize_dictionary");
+}
+
+static void rad_auth_cleanup() {
+	if(*temp_dict) {
+		debug("unlinking temporary dictionary '%s'...", temp_dict);
+		unlink(temp_dict);
+	}
+
+	clean_up_debugging();
+}
 
 static void setup_debugging(void)
 {
@@ -111,7 +131,7 @@ static void clean_up_debugging(void)
 	debugfp = stderr;
 }
 
-static struct rad_server *parse_servers(const char *config)
+static struct rad_server *parse_servers(const char *config, char *errmsg)
 {
 	FILE *fp;
 	char buf[BUFSIZE];
@@ -367,6 +387,9 @@ static int initialize_dictionary(char *dict, const char *userdict)
 		rc = dict_init(".", dict);
 	}
 
+	if(userdict)
+		*dict = '\0';
+
 	return rc;
 }
 
@@ -378,12 +401,12 @@ static int create_tmp_dict(char *dict)
 	sprintf(dict, "%s/dictionary.XXXXXX", P_tmpdir);
 	if(mkstemp(dict) == -1) {
 		strerror_r(errno, errstr, 1024);
-		error("cannot create tempfile for dictionary '%s': %s", dict, errstr);
+		debug("cannot create tempfile for dictionary '%s': %s", dict, errstr);
 		return -1;
 	}
 	if(!(fp = fopen(dict, "w"))) {
 		strerror_r(errno, errstr, 1024);
-		error("cannot open temporary dictionary '%s': %s", dict, errstr);
+		debug("cannot open temporary dictionary '%s': %s", dict, errstr);
 		return -1;
 	}
 	fwrite(dictionary_rfc2865, strlen(dictionary_rfc2865),
@@ -395,14 +418,22 @@ static int create_tmp_dict(char *dict)
 
 static int ipaddr_from_server(struct in_addr *addr, const char *host)
 {
-	struct hostent *res;
+	int code;
+	struct addrinfo *res, hints;
 
-	if(!(res = gethostbyname(host))) {
-		debug("  -> Failed to resolve host '%s'.", host);
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET; /* Only allow IPv4 for now */
+	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_protocol = 0;
+
+	if((code = getaddrinfo(host, NULL, &hints, &res)) < 0 || res == NULL) {
+		debug("  -> Failed to resolve host '%s': %s", host,
+			gai_strerror(code));
 		return 0;
 	}
+	addr->s_addr = ((struct sockaddr_in *)res->ai_addr)->sin_addr.s_addr;
+	freeaddrinfo(res);
 
-	addr->s_addr = ((struct in_addr*) res->h_addr_list[0])->s_addr;
 	debug("  -> resolved '%s' to '%s'", host, inet_ntoa(*addr));
 	return 1;
 }
@@ -410,11 +441,11 @@ static int ipaddr_from_server(struct in_addr *addr, const char *host)
 static int query_one_server(const char *username, const char *password,
 		struct rad_server *server,
 		int(*cb)(rad_cb_action, const void *, void *),
-		const void *arg)
+		const void *arg, char *errmsg)
 {
-	struct timeval tv;
-	volatile int max_fd;
+	int max_fd;
 	fd_set set;
+	struct pollfd pset[1];
 	struct sockaddr_in src;
 	socklen_t src_size = sizeof(src);
 	int rc = -2;
@@ -445,6 +476,13 @@ static int query_one_server(const char *username, const char *password,
 	int sockfd = fr_socket(&client, 0);
 	if(!sockfd)
 		bail_fr_error("fr_socket");
+
+	/* An fd_set can only hold fds up to the *value* of FD_SETSIZE (usually
+	 * 1024). So we assert here that we do not reach this value. It is
+	 * better to die here, than to get a slow, creeping memory corruption
+	 * from FD_SET(). */
+	assert(sockfd < FD_SETSIZE);
+
 	request->sockfd = -1;
 	request->code = PW_AUTHENTICATION_REQUEST;
 
@@ -523,18 +561,16 @@ static int query_one_server(const char *username, const char *password,
 	if(rad_send(request, NULL, server->secret) == -1)
 		bail_fr_error("rad_send");
 
-	/* And wait for reply, timing out as necessary */
+	/* We'll use poll(), but need the same information in an fd_set for
+	 * fr_packet_list_recv() further down */
 	FD_ZERO(&set);
+	FD_SET(sockfd, &set);
+	max_fd = sockfd + 1;
 
-	max_fd = fr_packet_list_fd_set(pl, &set);
-	if (max_fd < 0)
-		bail_fr_error("fr_packet_list_fd_set");
-
-	/* wait a configured time (default: 1.0s) */
-	tv.tv_sec  = server->timeout / 1000;
-	tv.tv_usec = 1000 * (server->timeout % 1000);
-
-	if (select(max_fd, &set, NULL, NULL, &tv) <= 0) {
+	memset(&pset, 0, sizeof(pset));
+	pset[0].fd = sockfd;
+	pset[0].events = POLLIN;
+	if (poll(pset, sizeof(pset)/sizeof(pset[0]), server->timeout) <= 0) {
 		debug("  -> TIMEOUT: no packet received in %dms!",
 			server->timeout);
 		rc = -2;
@@ -542,13 +578,14 @@ static int query_one_server(const char *username, const char *password,
 	}
 
 	reply = fr_packet_list_recv(pl, &set);
-	if (!reply)
-		bail_fr_error("received bad packet")
+	if(!reply)
+		bail_fr_error("received bad packet");
 
 	if (rad_verify(reply, request, server->secret) < 0)
 		bail_fr_error("rad_verify");
 
 	fr_packet_list_yank(pl, request);
+	fr_packet_list_id_free(pl, request);
 
 	if (rad_decode(reply, request, server->secret) != 0)
 		bail_fr_error("rad_decode");
@@ -570,6 +607,8 @@ static int query_one_server(const char *username, const char *password,
 		rad_free(&reply);
 	if(pl)
 		fr_packet_list_free(pl);
+	if(sockfd > 0)
+		close(sockfd);
 
 	return rc;
 }
@@ -586,6 +625,14 @@ int rad_auth(const char *username, const char *password,
 {
 	return rad_auth_cb(username, password, tries, config, userdict,
 				rad_cb_userparse, (void *)vps);
+}
+
+int rad_auth_r(const char *username, const char *password,
+		int tries, const char *config, const char *vps,
+		char *errmsg)
+{
+	return rad_auth_cb_r(username, password, tries, config,
+				rad_cb_userparse, (void *)vps, errmsg);
 }
 
 static int rad_cb_userparse(rad_cb_action action, const void *arg, void *data)
@@ -625,18 +672,26 @@ int rad_auth_cb(const char *username, const char *password,
 		int(*cb)(rad_cb_action, const void *, void *),
 		const void *arg)
 {
+	int rc;
+
+	rad_auth_init(userdict);
+	rc = rad_auth_cb_r(username, password, tries, config, cb, arg, last_error);
+	rad_auth_cleanup();
+
+	return rc;
+}
+
+int rad_auth_cb_r(const char *username, const char *password,
+		int tries, const char *config,
+		int(*cb)(rad_cb_action, const void *, void *),
+		const void *arg, char *errmsg)
+{
 	struct rad_server *serverlist = 0, *server = 0;
-	char dict[PATH_MAX];
 	int rc = -1;
 	int try;
 
-	setup_debugging();
-
-	if(initialize_dictionary(dict, userdict) < 0)
-		bail_fr_error("initialize_dictionary");
-
 	debug("parsing servers from config file '%s'", config);
-	serverlist = parse_servers(config);
+	serverlist = parse_servers(config, errmsg);
 	if(!serverlist) {
 		error("Could not parse server config '%s', cannot continue.", config);
 		rc = -1;
@@ -648,26 +703,20 @@ int rad_auth_cb(const char *username, const char *password,
 		server = serverlist = sort_servers(serverlist, try);
 		do {
 			debug("Querying server: %s:%d", server->name, server->port);
-			rc = query_one_server(username, password, server, cb, arg);
+			rc = query_one_server(username, password, server, cb, arg, errmsg);
 			if(rc >= 0)
 				goto done;
 		} while((server = server->next) != NULL);
 		debug("FAILED to reach any of the servers at try #%d/%d. %s",
 			try, tries, try == tries ? "Giving up." : "Trying again...");
 		if(try == tries && rc == -2)
-			snprintf(last_error, BUFSIZE, "Timeout: No authentication "
+			snprintf(errmsg, BUFSIZE, "Timeout: No authentication "
 				"servers could be reached after %d tries.", try);
 	}
 
 	done:
 	if(serverlist)
 		free_server_list(serverlist);
-	if(!userdict) {
-		debug("unlinking temporary dictionary '%s'...", dict);
-		unlink(dict);
-	}
-
-	clean_up_debugging();
 
 	return rc;
 }

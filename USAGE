@@ -11,7 +11,7 @@ BASIC USAGE
     compliant RADIUS packet. The default search path is defined by the
     FreeRADIUS installation (specifically in freeradius/radpaths.h).
 
-3.) Call
+3.) If your program is single-threaded, simply call
 
         rad_auth_simple(user, pw, config)
 
@@ -35,7 +35,8 @@ BASIC USAGE
     further attributes will be silently discarded. A warning and the
     list of successfully added attributes is printed in debug mode.
 
-    Refer to `radauth_test.c' for a complete example.
+    Refer to `radauth_test.c' for a complete example. Note that these
+    functions are *NOT* thread-safe. See 4).
 
     return code | meaning
     ------------+----------------------------------------------
@@ -44,7 +45,29 @@ BASIC USAGE
        -1       | an error happened; look at rad_auth_errstr()
        -2       | no servers could be reached
 
-3a.) If things don't work, re-compile the library with -DDEBUG, or via
+4.) If your program uses threads and different threads might call the
+    rad_auth*() functions at the same time, you will have to use the
+    re-entrant API. The dictionary initialization from `libfreeradius`
+    is not re-entrant, so this has to be done in a separate
+    initialization function at program start (or module load, etc).
+    Subsequently, you should use the rad_auth*_r() functions. E.g.:
+
+        /* Might be in main() or some initializer function */
+        rad_auth_init("dictionary.rfc2865");
+
+        /* Actual auth check */
+        int rc = -1;
+        char errmsg[1024];
+        rc = rad_auth_r(username, password, 3, "servers", vp, errmsg);
+
+        /* clean up */
+        rad_auth_cleanup();
+
+    See `radauth_test_threaded.c` for a complete example. (That
+    program can be used for RADIUS load testing, too. Try increasing
+    the number of threads to 128...)
+
+5.) If things don't work, re-compile the library with -DDEBUG, or via
     `make clean && make DEBUG=1'. You should get tons of output, then.
     Alternatively, and this is recommended, you can set up the
     environment variable `LIBRADAUTH_DEBUG` to achieve this. If set to

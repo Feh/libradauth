@@ -1,9 +1,13 @@
-DEFAULT: libradauth.so radauth_test
+DEFAULT: libradauth.so radauth_test radauth_test_threaded
 
 ifdef DEBUG
 DFLAGS = -DDEBUG -g
 else
-DGLAGS =
+DFLAGS =
+endif
+
+ifndef NO_LOCALLIB
+LOCAL_LIB_FLAGS = -Wl,-rpath="$(shell pwd)" -L.
 endif
 
 SONAME = libradauth.so.0
@@ -11,8 +15,10 @@ FREERADIUS_CPPFLAGS = -I/usr/include/freeradius
 FREERADIUS_LDFLAGS = -L/usr/lib/freeradius -rpath /usr/lib/freeradius -soname=$(SONAME)
 FREERADIUS_LIBS = -lfreeradius-radius -lpthread -lc
 
-radauth_test: radauth_test.c Makefile
-	gcc -Wall $(DFLAGS) -L. -lradauth -o radauth_test radauth_test.c
+radauth_test: radauth_test.c Makefile libradauth.so
+	gcc -Wall $(DFLAGS) $(LOCAL_LIB_FLAGS) -lradauth -o radauth_test radauth_test.c
+radauth_test_threaded: radauth_test_threaded.c Makefile libradauth.so
+	gcc -Wall $(DFLAGS) $(LOCAL_LIB_FLAGS) -lradauth -pthread -o radauth_test_threaded radauth_test_threaded.c
 libradauth.o: libradauth.c libradauth.h Makefile
 	gcc -Wall $(DFLAGS) $(FREERADIUS_CPPFLAGS) -fPIC -c libradauth.c
 libradauth.so: libradauth.o
@@ -21,4 +27,4 @@ libradauth.so: libradauth.o
 	ln -sf $(SONAME) libradauth.so
 
 clean:
-	rm -f libradauth.o libradauth.so radauth_test $(SONAME)
+	rm -f libradauth.o libradauth.so radauth_test radauth_test_threaded $(SONAME)
