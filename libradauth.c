@@ -690,6 +690,8 @@ int rad_auth_cb_r(const char *username, const char *password,
 	int rc = -1;
 	int try;
 
+	errmsg[0] = '\0';
+
 	debug("parsing servers from config file '%s'", config);
 	serverlist = parse_servers(config, errmsg);
 	if(!serverlist) {
