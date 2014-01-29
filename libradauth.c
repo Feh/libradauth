@@ -481,7 +481,12 @@ static int query_one_server(const char *username, const char *password,
 	 * 1024). So we assert here that we do not reach this value. It is
 	 * better to die here, than to get a slow, creeping memory corruption
 	 * from FD_SET(). */
-	assert(sockfd < FD_SETSIZE);
+	if(sockfd >= FD_SETSIZE) {
+		error("FATAL: Not safe to store sockfd = %d in an FD_SET "
+			"(FD_SETSIZE = %d). Cannot continue!", sockfd, FD_SETSIZE);
+		rc = -1;
+		goto done;
+	}
 
 	request->sockfd = -1;
 	request->code = PW_AUTHENTICATION_REQUEST;
