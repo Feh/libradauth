@@ -27,7 +27,7 @@ static int debug = 0;
 	if(debug) fprintf(debugfp, LIBNAME fmt "\n", ##__VA_ARGS__)
 #define error(fmt, ...) \
 	{ snprintf(errmsg, BUFSIZE, fmt, ##__VA_ARGS__); \
-	debug("%s", last_error); }
+	debug("%s", errmsg); }
 #define debug_fr_error(what) \
 	error(what ": %s%s", debug ? "ERROR: " : "", fr_strerror())
 #define bail_fr_error(what) { debug_fr_error(what); rc = -1; goto done; }
