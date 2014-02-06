@@ -515,7 +515,7 @@ static int query_one_server(const char *username, const char *password,
 		pairadd(&request->vps, vp);
 	} else if(server->method == CHAP) {
 		debug("  -> Using CHAP-scrambled passwords");
-		if(!(vp = pairmake("CHAP-Password", password, 0)))
+		if(!(vp = pairmake("CHAP-Password", "", 0)))
 			bail_fr_error("pairmake");
 		strlcpy(vp->vp_strvalue, password,
 			sizeof(vp->vp_strvalue));
