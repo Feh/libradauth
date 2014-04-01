@@ -32,10 +32,16 @@ void *auth(void *p) {
 	while(running) {
 		rc = rad_auth_r(arg->username, arg->password, 3, "servers",
 			arg->vp, errmsg);
-		if(rc < 0)
-			fprintf(stderr, "Cannot authenticate: %s\n", errmsg);
-		else if(rc >= 0)
+		switch(rc) {
+		case 0:
 			fprintf(stderr, ".");
+			break;
+		case 1:
+			fprintf(stderr, "X");
+			break;
+		default:
+			fprintf(stderr, "Cannot authenticate: %s\n", errmsg);
+		}
 	}
 	return NULL;
 }
