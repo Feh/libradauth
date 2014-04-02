@@ -9,7 +9,8 @@
 # The following keys are recognized:
 #
 #  host      hostname or ip address to be used [REQUIRED!]
-#  port      port to be used [default: 1812]
+#  port      port to be used for authentication [default: 1812]
+#  acctport  port to be used for accounting [default: 1813]
 #  method    either one of PAP, CHAP or CUSTOM [default: CHAP]
 #  bind      address or host name to bind to [default: 0.0.0.0]
 #  secret    RADIUS shared secret [default: none]

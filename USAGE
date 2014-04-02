@@ -100,3 +100,20 @@ value-pairs from a string.
 Note you'll probably have to include FreeRADIUS's header files if you
 want to do anything meaningful, for example casting to VALUE_PAIR or
 calling pairadd();
+
+ACCOUNTING PACKETS
+==================
+
+There is also an rad_acct_*() interface similar to the auth interface.
+You will need to set the "acctport" if you don't use the default port,
+and include all attributes manually. In particular, you will probably
+need a dictionary that has definitions suitable for accounting (see
+e.g. "dictionary.rfc2866").
+
+    char err[1024];
+    rad_auth_init("dictionary.zedat");
+    rad_acct_r(1, "servers.acct", "Acct-Status-Type = Start", (void *)&err);
+
+This will try only once to send the accounting packet. If an
+acknowledgement is received, this function returns 0; a negative code
+has the same meaning as the auth case.
