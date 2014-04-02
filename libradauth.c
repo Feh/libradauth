@@ -56,6 +56,11 @@ struct auth_args {
 	void const *arg;
 };
 
+struct acct_args {
+	int(*cb)(rad_cb_action, const void *, void *);
+	void const *arg;
+};
+
 /* A list of callback functions and assigned arguments */
 struct rad_cb_list;
 struct rad_cb_list {
@@ -554,13 +559,16 @@ static int send_recv(rad_packet_type type,
 		rc = -1;
 		goto done;
 	}
-	if(!(vp = pairmake("NAS-IP-Address", "0.0.0.0", 0))) /* dummy */
-		bail_fr_error("pairmake");
-	vp->vp_ipaddr = src.sin_addr.s_addr; /* real address */
-	pairadd(&request->vps, vp);
-	if(!(vp = pairmake("NAS-Port", "10", 0)))
-		bail_fr_error("pairmake");
-	pairadd(&request->vps, vp);
+
+	if(type == RAD_PACKET_AUTH) {
+		if(!(vp = pairmake("NAS-IP-Address", "0.0.0.0", 0))) /* dummy */
+			bail_fr_error("pairmake");
+		vp->vp_ipaddr = src.sin_addr.s_addr; /* real address */
+		pairadd(&request->vps, vp);
+		if(!(vp = pairmake("NAS-Port", "10", 0)))
+			bail_fr_error("pairmake");
+		pairadd(&request->vps, vp);
+	}
 
 	/* callback function */
 	for(cb = cb_head; cb; cb = cb->next) {
@@ -648,6 +656,7 @@ static int rad_cb_credentials(rad_cb_action action,
 	RADIUS_PACKET *request;
 	VALUE_PAIR *vp;
 
+
 	if(action != RAD_CB_CREDENTIALS)
 		return 0;
 	if(arg == NULL || data == NULL)
@@ -717,6 +726,26 @@ static int try_auth_one_server(struct rad_server *server,
 	return send_recv(RAD_PACKET_AUTH, server, cb_head, errmsg);
 }
 
+static int try_acct_one_server(struct rad_server *server,
+				void *ap, char *errmsg)
+{
+	struct acct_args *args;
+	struct rad_cb_list *cb_head;
+	struct rad_cb_list cb_userdefined;
+
+	args = (struct acct_args *)ap;
+
+	/* We construct a list of callback functions. First, we add
+	 * credentials. Next, we add the user-defined callback function. */
+	cb_head = &cb_userdefined;
+
+	cb_userdefined.f = args->cb;
+	cb_userdefined.arg = args->arg;
+	cb_userdefined.next = NULL;
+
+	return send_recv(RAD_PACKET_ACCT, server, cb_head, errmsg);
+}
+
 int rad_auth_simple(const char *username, const char *password,
 		const char *config)
 {
@@ -731,11 +760,25 @@ int rad_auth(const char *username, const char *password,
 				rad_cb_userparse, (void *)vps);
 }
 
+int rad_acct(int tries, const char *config, const char *userdict,
+		const char *vps)
+{
+	return rad_acct_cb(tries, config, userdict,
+				rad_cb_userparse, (void *)vps);
+}
+
 int rad_auth_r(const char *username, const char *password,
 		int tries, const char *config, const char *vps,
 		char *errmsg)
 {
 	return rad_auth_cb_r(username, password, tries, config,
+				rad_cb_userparse, (void *)vps, errmsg);
+}
+
+int rad_acct_r(int tries, const char *config, const char *vps,
+		char *errmsg)
+{
+	return rad_acct_cb_r(tries, config,
 				rad_cb_userparse, (void *)vps, errmsg);
 }
 
@@ -780,6 +823,19 @@ int rad_auth_cb(const char *username, const char *password,
 
 	rad_auth_init(userdict);
 	rc = rad_auth_cb_r(username, password, tries, config, cb, arg, last_error);
+	rad_auth_cleanup();
+
+	return rc;
+}
+
+int rad_acct_cb(int tries, const char *config, const char *userdict,
+		int(*cb)(rad_cb_action, const void *, void *),
+		const void *arg)
+{
+	int rc;
+
+	rad_auth_init(userdict);
+	rc = rad_acct_cb_r(tries, config, cb, arg, last_error);
 	rad_auth_cleanup();
 
 	return rc;
@@ -837,6 +893,16 @@ int rad_auth_cb_r(const char *username, const char *password,
 	a.cb = cb;
 	a.arg = arg;
 	return loop_servers(config, tries, try_auth_one_server, (void *)&a, errmsg);
+}
+
+int rad_acct_cb_r(int tries, const char *config,
+		int(*cb)(rad_cb_action, const void *, void *),
+		const void *arg, char *errmsg)
+{
+	struct acct_args a;
+	a.cb = cb;
+	a.arg = arg;
+	return loop_servers(config, tries, try_acct_one_server, (void *)&a, errmsg);
 }
 
 /* vim:set noet sw=8 ts=8: */

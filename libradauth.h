@@ -12,11 +12,6 @@ typedef enum {
 	RAD_PACKET_ACCT,
 } rad_packet_type;
 
-typedef enum {
-	RAD_ACCT_START,
-	RAD_ACCT_STOP,
-} rad_acct_action;
-
 void rad_auth_init(const char *userdict);
 int rad_auth_simple(const char *username, const char *password,
 		const char *config);
@@ -35,5 +30,17 @@ int rad_auth_cb_r(const char *username, const char *password,
 		int(*cb)(rad_cb_action, const void *, void *),
 		const void *arg, char *errmsg);
 char *rad_auth_errstr(void);
+
+
+int rad_acct(int tries, const char *config, const char *userdict,
+		const char *vps);
+int rad_acct_r(int tries, const char *config, const char *vps,
+		char *errmsg);
+int rad_acct_cb(int tries, const char *config, const char *userdict,
+		int(*cb)(rad_cb_action, const void *, void *),
+		const void *arg);
+int rad_acct_cb_r(int tries, const char *config,
+		int(*cb)(rad_cb_action, const void *, void *),
+		const void *arg, char *errmsg);
 
 #endif
