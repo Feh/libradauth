@@ -49,6 +49,13 @@ struct rad_credentials {
 	struct rad_server *server;
 };
 
+struct auth_args {
+	char const *username;
+	char const *password;
+	int(*cb)(rad_cb_action, const void *, void *);
+	void const *arg;
+};
+
 /* A list of callback functions and assigned arguments */
 struct rad_cb_list;
 struct rad_cb_list {
@@ -455,7 +462,7 @@ static int send_recv(rad_packet_type type,
 		struct rad_cb_list *cb_head,
 		char *errmsg)
 {
-	int max_fd;
+	int max_fd, port;
 	fd_set set;
 	struct pollfd pset[1];
 	struct sockaddr_in src;
@@ -475,11 +482,11 @@ static int send_recv(rad_packet_type type,
 	switch(type) {
 	case RAD_PACKET_AUTH:
 		request->code = PW_AUTHENTICATION_REQUEST;
-		request->dst_port = server->port;
+		port = server->port;
 		break;
 	case RAD_PACKET_ACCT:
 		request->code = PW_ACCOUNTING_REQUEST;
-		request->dst_port = server->acctport;
+		port = server->acctport;
 		break;
 	default:
 		error("send_recv: Unknow packet type, cannot send");
@@ -487,7 +494,7 @@ static int send_recv(rad_packet_type type,
 	}
 
 	request->dst_ipaddr.af = AF_INET;
-	// request->dst_port is set already according to "type"
+	request->dst_port = port;
 	if(!ipaddr_from_server(
 		&(request->dst_ipaddr.ipaddr.ip4addr), server->host))
 		goto done;
@@ -533,7 +540,7 @@ static int send_recv(rad_packet_type type,
 	}
 
 	memset(&src, 0, sizeof(src));
-	if(fr_ipaddr2sockaddr(&(request->dst_ipaddr), server->port,
+	if(fr_ipaddr2sockaddr(&(request->dst_ipaddr), port,
 		(struct sockaddr_storage *) &src, &src_size)) {
 		/* This will "connect" the socket to the remote side. Since we
 		 * use UDP, this will just set the "default destination" for
@@ -681,29 +688,30 @@ static int rad_cb_credentials(rad_cb_action action,
 	return 0;
 }
 
-static int try_auth_one_server(const char *username, const char *password,
-		struct rad_server *server,
-		int(*cb)(rad_cb_action, const void *, void *),
-		const void *arg, char *errmsg)
+static int try_auth_one_server(struct rad_server *server,
+				void *ap, char *errmsg)
 {
+	struct auth_args *args;
 	struct rad_credentials cred;
 	struct rad_cb_list *cb_head;
 	struct rad_cb_list cb_cred, cb_userdefined;
+
+	args = (struct auth_args *)ap;
 
 	/* We construct a list of callback functions. First, we add
 	 * credentials. Next, we add the user-defined callback function. */
 	cb_head = &cb_cred;
 
-	strlcpy(cred.username, username, sizeof(cred.username));
-	strlcpy(cred.password, password, sizeof(cred.password));
+	strlcpy(cred.username, args->username, sizeof(cred.username));
+	strlcpy(cred.password, args->password, sizeof(cred.password));
 	cred.server = server;
 
 	cb_cred.f = rad_cb_credentials;
 	cb_cred.arg = (void *) &cred;
 	cb_cred.next = &cb_userdefined;
 
-	cb_userdefined.f = cb;
-	cb_userdefined.arg = arg;
+	cb_userdefined.f = args->cb;
+	cb_userdefined.arg = args->arg;
 	cb_userdefined.next = NULL;
 
 	return send_recv(RAD_PACKET_AUTH, server, cb_head, errmsg);
@@ -777,10 +785,9 @@ int rad_auth_cb(const char *username, const char *password,
 	return rc;
 }
 
-int rad_auth_cb_r(const char *username, const char *password,
-		int tries, const char *config,
-		int(*cb)(rad_cb_action, const void *, void *),
-		const void *arg, char *errmsg)
+int loop_servers(const char *config, int tries,
+	int (*f)(struct rad_server *, void *, char *),
+	void *arg, char *errmsg)
 {
 	struct rad_server *serverlist = 0, *server = 0;
 	int rc = -1;
@@ -801,7 +808,7 @@ int rad_auth_cb_r(const char *username, const char *password,
 		server = serverlist = sort_servers(serverlist, try);
 		do {
 			debug("Querying server: %s:%d", server->name, server->port);
-			rc = try_auth_one_server(username, password, server, cb, arg, errmsg);
+			rc = f(server, arg, errmsg);
 			if(rc >= 0)
 				goto done;
 		} while((server = server->next) != NULL);
@@ -817,6 +824,19 @@ int rad_auth_cb_r(const char *username, const char *password,
 		free_server_list(serverlist);
 
 	return rc;
+}
+
+int rad_auth_cb_r(const char *username, const char *password,
+		int tries, const char *config,
+		int(*cb)(rad_cb_action, const void *, void *),
+		const void *arg, char *errmsg)
+{
+	struct auth_args a;
+	a.username = username;
+	a.password = password;
+	a.cb = cb;
+	a.arg = arg;
+	return loop_servers(config, tries, try_auth_one_server, (void *)&a, errmsg);
 }
 
 /* vim:set noet sw=8 ts=8: */
