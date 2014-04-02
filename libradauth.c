@@ -1,7 +1,4 @@
-#include <stdio.h>
 #include <errno.h>
-#include <string.h>
-#include <stdlib.h>
 #include <netdb.h>
 #include <limits.h>
 #include <poll.h>
@@ -37,12 +34,27 @@ struct rad_server {
 	char name[64];
 	char host[64];
 	int port;
+	int acctport;
 	int priority;
 	int timeout;
 	char bind[64];
 	char secret[64];
 	enum { UNKNOWN, PAP, CHAP, CUSTOM } method;
 	struct rad_server *next;
+};
+
+struct rad_credentials {
+	char username[128];
+	char password[128];
+	struct rad_server *server;
+};
+
+/* A list of callback functions and assigned arguments */
+struct rad_cb_list;
+struct rad_cb_list {
+	int(*f)(rad_cb_action, const void *, void *);
+	void const *arg;
+	struct rad_cb_list *next;
 };
 
 /* Not re-entrant library functions use this. */
@@ -58,9 +70,6 @@ static struct rad_server *parse_one_server(char *buf);
 static struct rad_server *parse_servers(const char *config, char *errmsg);
 static void server_add_field(struct rad_server *s,
 	const char *k, const char *v);
-static int query_one_server(const char *username, const char *password,
-	struct rad_server *server, int(*cb)(rad_cb_action, const void *, void *),
-	const void *arg, char *errmsg);
 static int rad_cb_userparse(rad_cb_action action, const void *arg, void *data);
 static struct rad_server *sort_servers(struct rad_server *list, int try);
 static int cmp_prio_rand (const void *, const void *);
@@ -296,6 +305,7 @@ static struct rad_server *parse_one_server(char *buf)
 	*(s->host) = '\0';
 	*(s->secret) = '\0';
 	s->port = 1812;
+	s->acctport = 1813;
 	s->priority = 0;
 	s->timeout = 1000; /* 1 second */
 	s->method = CHAP;
@@ -333,6 +343,8 @@ static void server_add_field(struct rad_server *s, const char *k, const char *v)
 		strlcpy(s->secret, v, sizeof(s->secret));
 	else if(!strcmp(k, "port"))
 		s->port = atoi(v);
+	else if(!strcmp(k, "acctport"))
+		s->acctport = atoi(v);
 	else if(!strcmp(k, "priority"))
 		s->priority = atoi(v);
 	else if(!strcmp(k, "timeout"))
@@ -438,10 +450,10 @@ static int ipaddr_from_server(struct in_addr *addr, const char *host)
 	return 1;
 }
 
-static int query_one_server(const char *username, const char *password,
+static int send_recv(rad_packet_type type,
 		struct rad_server *server,
-		int(*cb)(rad_cb_action, const void *, void *),
-		const void *arg, char *errmsg)
+		struct rad_cb_list *cb_head,
+		char *errmsg)
 {
 	int max_fd;
 	fd_set set;
@@ -449,6 +461,7 @@ static int query_one_server(const char *username, const char *password,
 	struct sockaddr_in src;
 	socklen_t src_size = sizeof(src);
 	int rc = -2;
+	struct rad_cb_list *cb;
 
 	fr_ipaddr_t client;
 	fr_packet_list_t *pl = 0;
@@ -459,10 +472,22 @@ static int query_one_server(const char *username, const char *password,
 	if(!request)
 		bail_fr_error("rad_alloc");
 
-	request->code = PW_AUTHENTICATION_REQUEST;
+	switch(type) {
+	case RAD_PACKET_AUTH:
+		request->code = PW_AUTHENTICATION_REQUEST;
+		request->dst_port = server->port;
+		break;
+	case RAD_PACKET_ACCT:
+		request->code = PW_ACCOUNTING_REQUEST;
+		request->dst_port = server->acctport;
+		break;
+	default:
+		error("send_recv: Unknow packet type, cannot send");
+		goto done;
+	}
 
 	request->dst_ipaddr.af = AF_INET;
-	request->dst_port = server->port;
+	// request->dst_port is set already according to "type"
 	if(!ipaddr_from_server(
 		&(request->dst_ipaddr.ipaddr.ip4addr), server->host))
 		goto done;
@@ -489,7 +514,6 @@ static int query_one_server(const char *username, const char *password,
 	}
 
 	request->sockfd = -1;
-	request->code = PW_AUTHENTICATION_REQUEST;
 
 	if(!(pl = fr_packet_list_create(1)))
 		bail_fr_error("fr_packet_list_create");
@@ -500,31 +524,12 @@ static int query_one_server(const char *username, const char *password,
 	if(fr_packet_list_id_alloc(pl, request) < 0)
 		bail_fr_error("fr_packet_list_id_alloc");
 
-	/* construct value pairs */
-	if(!(vp = pairmake("User-Name", username, 0)))
-		bail_fr_error("pairmake");
-	pairadd(&request->vps, vp);
-
-	if(server->method == PAP) {
-		debug("  -> Using PAP-scrambled passwords");
-		/* encryption of the packet will happen *automatically* just
-		 * before sending the packet via make_passwd() */
-		if(!(vp = pairmake("User-Password", password, 0)))
-			bail_fr_error("pairmake");
-		vp->flags.encrypt = FLAG_ENCRYPT_USER_PASSWORD;
-		pairadd(&request->vps, vp);
-	} else if(server->method == CHAP) {
-		debug("  -> Using CHAP-scrambled passwords");
-		if(!(vp = pairmake("CHAP-Password", "", 0)))
-			bail_fr_error("pairmake");
-		strlcpy(vp->vp_strvalue, password,
-			sizeof(vp->vp_strvalue));
-		vp->length = strlen(vp->vp_strvalue);
-		rad_chap_encode(request, vp->vp_octets, request->id, vp);
-		vp->length = 17;
-		pairadd(&request->vps, vp);
-	} else if(server->method == CUSTOM) {
-		debug("  -> Using custom authentication method");
+	/* callback function */
+	for(cb = cb_head; cb; cb = cb->next) {
+		if(cb->f && cb->f(RAD_CB_CREDENTIALS, cb->arg, (void *)request) != 0) {
+			debug("  -> WARNING: Credentials callback returned "
+				"nonzero exit status!");
+		}
 	}
 
 	memset(&src, 0, sizeof(src));
@@ -551,11 +556,15 @@ static int query_one_server(const char *username, const char *password,
 	pairadd(&request->vps, vp);
 
 	/* callback function */
-	if(cb && cb(RAD_CB_VALUEPAIRS, arg, (void *)request->vps) != 0) {
-		debug("  -> WARNING: Callback returned nonzero exit status!");
+	for(cb = cb_head; cb; cb = cb->next) {
+		if(cb->f && cb->f(RAD_CB_VALUEPAIRS, cb->arg, (void *)request->vps) != 0) {
+			debug("  -> WARNING: Valuepair callback "
+				"returned nonzero exit status!");
+		}
 	}
 
-	if(server->method == CUSTOM && !pairfind(request->vps, PW_STATE)) {
+	if(type == RAD_PACKET_AUTH && server->method == CUSTOM &&
+		!pairfind(request->vps, PW_STATE)) {
 		debug("WARNING: You MUST use a 'State' attribute with your "
 			"custom authentication mechanism. See RFC 2865, 4.1.");
 	}
@@ -595,14 +604,21 @@ static int query_one_server(const char *username, const char *password,
 	if (rad_decode(reply, request, server->secret) != 0)
 		bail_fr_error("rad_decode");
 
-	if(reply->code == PW_AUTHENTICATION_ACK) {
+	switch(reply->code) {
+	case PW_AUTHENTICATION_ACK:
 		rc = 0;
 		debug("  -> ACK: Authentication was successful.");
-	}
-
-	if(reply->code == PW_AUTHENTICATION_REJECT) {
+		break;
+	case PW_AUTHENTICATION_REJECT:
 		rc = 1;
 		debug("  -> REJECT: Authentication was not successful.");
+		break;
+	case PW_ACCOUNTING_RESPONSE:
+		rc = 0;
+		debug("  -> ACK: Accounting packet arrived successfully.");
+		break;
+	default:
+		debug("  -> UNKNOWN: Received a reply that I don't know");
 	}
 
 	done:
@@ -616,6 +632,81 @@ static int query_one_server(const char *username, const char *password,
 		close(sockfd);
 
 	return rc;
+}
+
+static int rad_cb_credentials(rad_cb_action action,
+				const void *arg, void *data)
+{
+	struct rad_credentials *cred;
+	RADIUS_PACKET *request;
+	VALUE_PAIR *vp;
+
+	if(action != RAD_CB_CREDENTIALS)
+		return 0;
+	if(arg == NULL || data == NULL)
+		return 0;
+
+	request = (RADIUS_PACKET *)data;
+	cred = (struct rad_credentials *)arg;
+
+	debug("  -> Adding credentials");
+
+	/* construct value pairs */
+	if(!(vp = pairmake("User-Name", cred->username, 0)))
+		return 1;
+	pairadd(&request->vps, vp);
+
+	if(cred->server->method == PAP) {
+		debug("  -> Using PAP-scrambled passwords");
+		/* encryption of the packet will happen *automatically* just
+		 * before sending the packet via make_passwd() */
+		if(!(vp = pairmake("User-Password", cred->password, 0)))
+			return 1;
+		vp->flags.encrypt = FLAG_ENCRYPT_USER_PASSWORD;
+		pairadd(&request->vps, vp);
+	} else if(cred->server->method == CHAP) {
+		debug("  -> Using CHAP-scrambled passwords");
+		if(!(vp = pairmake("CHAP-Password", "", 0)))
+			return 1;
+		strlcpy(vp->vp_strvalue, cred->password,
+			sizeof(vp->vp_strvalue));
+		vp->length = strlen(vp->vp_strvalue);
+		rad_chap_encode(request, vp->vp_octets, request->id, vp);
+		vp->length = 17;
+		pairadd(&request->vps, vp);
+	} else if(cred->server->method == CUSTOM) {
+		debug("  -> Using custom authentication method");
+	}
+
+	return 0;
+}
+
+static int try_auth_one_server(const char *username, const char *password,
+		struct rad_server *server,
+		int(*cb)(rad_cb_action, const void *, void *),
+		const void *arg, char *errmsg)
+{
+	struct rad_credentials cred;
+	struct rad_cb_list *cb_head;
+	struct rad_cb_list cb_cred, cb_userdefined;
+
+	/* We construct a list of callback functions. First, we add
+	 * credentials. Next, we add the user-defined callback function. */
+	cb_head = &cb_cred;
+
+	strlcpy(cred.username, username, sizeof(cred.username));
+	strlcpy(cred.password, password, sizeof(cred.password));
+	cred.server = server;
+
+	cb_cred.f = rad_cb_credentials;
+	cb_cred.arg = (void *) &cred;
+	cb_cred.next = &cb_userdefined;
+
+	cb_userdefined.f = cb;
+	cb_userdefined.arg = arg;
+	cb_userdefined.next = NULL;
+
+	return send_recv(RAD_PACKET_AUTH, server, cb_head, errmsg);
 }
 
 int rad_auth_simple(const char *username, const char *password,
@@ -710,7 +801,7 @@ int rad_auth_cb_r(const char *username, const char *password,
 		server = serverlist = sort_servers(serverlist, try);
 		do {
 			debug("Querying server: %s:%d", server->name, server->port);
-			rc = query_one_server(username, password, server, cb, arg, errmsg);
+			rc = try_auth_one_server(username, password, server, cb, arg, errmsg);
 			if(rc >= 0)
 				goto done;
 		} while((server = server->next) != NULL);

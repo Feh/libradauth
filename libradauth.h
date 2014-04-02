@@ -4,7 +4,18 @@
 /* Indicates from where the callback function was called */
 typedef enum {
 	RAD_CB_VALUEPAIRS = 0, /* data: (VALUE_PAIR *) */
+	RAD_CB_CREDENTIALS = 1, /* data: (RADIUS_PACKET *) */
 } rad_cb_action;
+
+typedef enum {
+	RAD_PACKET_AUTH,
+	RAD_PACKET_ACCT,
+} rad_packet_type;
+
+typedef enum {
+	RAD_ACCT_START,
+	RAD_ACCT_STOP,
+} rad_acct_action;
 
 void rad_auth_init(const char *userdict);
 int rad_auth_simple(const char *username, const char *password,
