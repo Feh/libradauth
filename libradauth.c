@@ -575,7 +575,7 @@ static int send_recv(rad_packet_type type,
 
 	/* callback function */
 	for(cb = cb_head; cb; cb = cb->next) {
-		if(cb->f && cb->f(RAD_CB_VALUEPAIRS, cb->arg, (void *)request->vps) != 0) {
+		if(cb->f && cb->f(RAD_CB_VALUEPAIRS, cb->arg, (void *)&request->vps) != 0) {
 			debug("  -> WARNING: Valuepair callback "
 				"returned nonzero exit status!");
 		}
@@ -738,8 +738,8 @@ static int try_acct_one_server(struct rad_server *server,
 
 	args = (struct acct_args *)ap;
 
-	/* We construct a list of callback functions. First, we add
-	 * credentials. Next, we add the user-defined callback function. */
+	/* We construct a list of callback functions.
+	 * For now it only includes the userdefined (e.g. rad_cb_userparse) */
 	cb_head = &cb_userdefined;
 
 	cb_userdefined.f = args->cb;
@@ -788,22 +788,23 @@ int rad_acct_r(int tries, const char *config, const char *vps,
 static int rad_cb_userparse(rad_cb_action action, const void *arg, void *data)
 {
 	const char *userpairs;
-	VALUE_PAIR *vp, *vps;
+	VALUE_PAIR *vp;
+	VALUE_PAIR **vps;
 	char buf[BUFSIZE];
 
 	if(action != RAD_CB_VALUEPAIRS)
 		return 0;
 
 	userpairs = (const char *)arg;
-	vps = (VALUE_PAIR *)data;
+	vps = (VALUE_PAIR **)data;
 
 	/* do we have value pairs to add? */
 	if(arg == NULL)
 		return 0;
 
-	if(userparse(userpairs, &vps) == T_OP_INVALID)
+	if(userparse(userpairs, vps) == T_OP_INVALID)
 		debug("WARNING: userparse() could not parse all attributes!");
-	for(vp = vps; vp; vp = vp->next) {
+	for(vp = *vps; vp; vp = vp->next) {
 		if(vp->attribute == PW_USER_NAME ||
 		   vp->attribute == PW_USER_PASSWORD ||
 		   vp->attribute == PW_CHAP_PASSWORD ||
