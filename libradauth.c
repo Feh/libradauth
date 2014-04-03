@@ -467,7 +467,7 @@ static int send_recv(rad_packet_type type,
 		struct rad_cb_list *cb_head,
 		char *errmsg)
 {
-	int max_fd, port;
+	int sockfd = -1, max_fd, port;
 	fd_set set;
 	struct pollfd pset[1];
 	struct sockaddr_in src;
@@ -512,7 +512,7 @@ static int send_recv(rad_packet_type type,
 		goto done;
 
 	/* int sockfd = fr_socket(&request->dst_ipaddr, 0); */
-	int sockfd = fr_socket(&client, 0);
+	sockfd = fr_socket(&client, 0);
 	if(!sockfd)
 		bail_fr_error("fr_socket");
 
