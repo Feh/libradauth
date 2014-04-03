@@ -10,7 +10,7 @@ ifndef NO_LOCALLIB
 LOCAL_LIB_FLAGS = -Wl,-rpath="$(shell pwd)" -L.
 endif
 
-CFLAGS = -Wall -Werror
+CFLAGS = -Wall -Werror -fstack-protector-all -D_FORTIFY_SOURCE=2
 
 SONAME = libradauth.so.0
 FREERADIUS_CPPFLAGS = -I/usr/include/freeradius

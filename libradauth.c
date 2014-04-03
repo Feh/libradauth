@@ -470,7 +470,8 @@ static int send_recv(rad_packet_type type,
 	int sockfd = -1, max_fd, port;
 	fd_set set;
 	struct pollfd pset[1];
-	struct sockaddr_in src;
+	struct sockaddr_storage src;
+	struct sockaddr_in *src_in;
 	socklen_t src_size = sizeof(src);
 	int rc = -2;
 	struct rad_cb_list *cb;
@@ -547,8 +548,8 @@ static int send_recv(rad_packet_type type,
 	}
 
 	memset(&src, 0, sizeof(src));
-	if(fr_ipaddr2sockaddr(&(request->dst_ipaddr), port,
-		(struct sockaddr_storage *) &src, &src_size)) {
+	src_in = (struct sockaddr_in *) &src;
+	if(fr_ipaddr2sockaddr(&(request->dst_ipaddr), port, &src, &src_size)) {
 		/* This will "connect" the socket to the remote side. Since we
 		 * use UDP, this will just set the "default destination" for
 		 * packets. We need this call in order to find out our source
@@ -565,7 +566,7 @@ static int send_recv(rad_packet_type type,
 	if(type == RAD_PACKET_AUTH) {
 		if(!(vp = pairmake("NAS-IP-Address", "0.0.0.0", 0))) /* dummy */
 			bail_fr_error("pairmake");
-		vp->vp_ipaddr = src.sin_addr.s_addr; /* real address */
+		vp->vp_ipaddr = src_in->sin_addr.s_addr; /* real address */
 		pairadd(&request->vps, vp);
 		if(!(vp = pairmake("NAS-Port", "10", 0)))
 			bail_fr_error("pairmake");
@@ -587,7 +588,7 @@ static int send_recv(rad_packet_type type,
 	}
 
 	debug("  -> Sending packet via %s:%d...",
-		inet_ntoa(src.sin_addr), ntohs(src.sin_port));
+		inet_ntoa(src_in->sin_addr), ntohs(src_in->sin_port));
 
 	if(rad_send(request, NULL, server->secret) == -1)
 		bail_fr_error("rad_send");
