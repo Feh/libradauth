@@ -224,10 +224,11 @@ static struct rad_server *parse_servers(const char *config, char *errmsg)
 			cur = tmp;
 		}
 		debug("successfully added server '%s': %s:%d "
-			"(prio %d, timeout %dms, method %s)",
+			"(prio %d, timeout %dms, method %s, acctport %d)",
 			cur->name, cur->host, cur->port, cur->priority,
 			cur->timeout, cur->method == CHAP ? "CHAP" :
-				(cur->method == PAP ? "PAP" : "CUSTOM"));
+				(cur->method == PAP ? "PAP" : "CUSTOM"),
+			cur->acctport);
 	}
 
 	if(s_len > 0) {
@@ -269,10 +270,9 @@ static struct rad_server *sort_servers(struct rad_server *list, int try)
 	/* debugging */
 	tmp = head;
 	debug("Servers will be tried in this order: ");
-	debug("   prio name = host:port");
+	debug("   prio name (host)");
 	do {
-		debug("%7d %s = %s:%d", tmp->priority,
-			tmp->name, tmp->host, tmp->port);
+		debug("%7d %s (%s)", tmp->priority, tmp->name, tmp->host);
 	} while ((tmp = tmp->next));
 
 	free(servers);
@@ -497,6 +497,8 @@ static int send_recv(rad_packet_type type,
 		error("send_recv: Unknow packet type, cannot send");
 		goto done;
 	}
+
+	debug("Querying server: %s (%s:%d)", server->name, server->host, port);
 
 	request->dst_ipaddr.af = AF_INET;
 	request->dst_port = port;
@@ -863,7 +865,6 @@ int loop_servers(const char *config, int tries,
 		debug("ATTEMPT #%d of %d", try, tries);
 		server = serverlist = sort_servers(serverlist, try);
 		do {
-			debug("Querying server: %s:%d", server->name, server->port);
 			rc = f(server, arg, errmsg);
 			if(rc >= 0)
 				goto done;
