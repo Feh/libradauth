@@ -31,21 +31,21 @@ static int debug = 0;
 
 struct rad_server;
 struct rad_server {
-	char name[64];
-	char host[64];
+	char name[BUFSIZE];
+	char host[BUFSIZE];
 	int port;
 	int acctport;
 	int priority;
 	int timeout;
-	char bind[64];
-	char secret[64];
+	char bind[BUFSIZE];
+	char secret[BUFSIZE];
 	enum { UNKNOWN, PAP, CHAP, CUSTOM } method;
 	struct rad_server *next;
 };
 
 struct rad_credentials {
-	char username[128];
-	char password[128];
+	char username[BUFSIZE];
+	char password[BUFSIZE];
 	struct rad_server *server;
 };
 
@@ -299,7 +299,7 @@ static struct rad_server *parse_one_server(char *buf)
 	struct rad_server *s;
 	const char delim[4] = " \t\n";
 	char *t, *v, *rest;
-	char token[64];
+	char token[BUFSIZE];
 
 	s = malloc(sizeof(*s));
 	if(!s) {
@@ -311,7 +311,7 @@ static struct rad_server *parse_one_server(char *buf)
 		free(s);
 		return NULL;
 	}
-	strlcpy(s->name, t, 64);
+	strlcpy(s->name, t, sizeof(s->name));
 
 	/* fill with defaults */
 	*(s->host) = '\0';
@@ -330,7 +330,7 @@ static struct rad_server *parse_one_server(char *buf)
 	}
 
 	while((t = strtok_r(NULL, delim, &rest)) && *t != '}') {
-		strlcpy(token, t, 64);
+		strlcpy(token, t, sizeof(token));
 		if((v = strtok_r(NULL, delim, &rest)))
 			server_add_field(s, token, v);
 	}
