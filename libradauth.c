@@ -467,7 +467,7 @@ static int send_recv(rad_packet_type type,
 		struct rad_cb_list *cb_head,
 		char *errmsg)
 {
-	int sockfd = -1, max_fd, port;
+	int sockfd = -1, port;
 	fd_set set;
 	struct pollfd pset[1];
 	struct sockaddr_storage src;
@@ -597,7 +597,6 @@ static int send_recv(rad_packet_type type,
 	 * fr_packet_list_recv() further down */
 	FD_ZERO(&set);
 	FD_SET(sockfd, &set);
-	max_fd = sockfd + 1;
 
 	memset(&pset, 0, sizeof(pset));
 	pset[0].fd = sockfd;
