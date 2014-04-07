@@ -44,8 +44,8 @@ struct rad_server {
 };
 
 struct rad_credentials {
-	char username[BUFSIZE];
-	char password[BUFSIZE];
+	char const *username;
+	char const *password;
 	struct rad_server *server;
 };
 
@@ -671,9 +671,14 @@ static int rad_cb_credentials(rad_cb_action action,
 	debug("  -> Adding credentials");
 
 	/* construct value pairs */
-	if(!(vp = pairmake("User-Name", cred->username, 0)))
-		return 1;
-	pairadd(&request->vps, vp);
+	if(cred->username) {
+		if(!(vp = pairmake("User-Name", cred->username, 0)))
+			return 1;
+		pairadd(&request->vps, vp);
+	}
+
+	if(!cred->password)
+		return 0;
 
 	if(cred->server->method == PAP) {
 		debug("  -> Using PAP-scrambled passwords");
@@ -714,8 +719,8 @@ static int try_auth_one_server(struct rad_server *server,
 	 * credentials. Next, we add the user-defined callback function. */
 	cb_head = &cb_cred;
 
-	strlcpy(cred.username, args->username, sizeof(cred.username));
-	strlcpy(cred.password, args->password, sizeof(cred.password));
+	cred.username = args->username;
+	cred.password = args->password;
 	cred.server = server;
 
 	cb_cred.f = rad_cb_credentials;
