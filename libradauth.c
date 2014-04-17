@@ -419,16 +419,17 @@ static int initialize_dictionary(char *dict, const char *userdict)
 
 static int create_tmp_dict(char *dict)
 {
+	int fd;
 	FILE *fp;
 	char errstr[1024];
 
 	sprintf(dict, "%s/dictionary.XXXXXX", P_tmpdir);
-	if(mkstemp(dict) == -1) {
+	if((fd = mkstemp(dict)) == -1) {
 		strerror_r(errno, errstr, 1024);
 		debug("cannot create tempfile for dictionary '%s': %s", dict, errstr);
 		return -1;
 	}
-	if(!(fp = fopen(dict, "w"))) {
+	if(!(fp = fdopen(fd, "w"))) {
 		strerror_r(errno, errstr, 1024);
 		debug("cannot open temporary dictionary '%s': %s", dict, errstr);
 		return -1;
