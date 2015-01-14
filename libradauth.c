@@ -639,6 +639,17 @@ static int send_recv(rad_packet_type type,
 		debug("  -> UNKNOWN: Received a reply that I don't know");
 	}
 
+
+	/* call callback for reply */
+	for(cb = cb_head; cb; cb = cb->next) {
+		if(cb->f && cb->f(RAD_CB_REPLY, cb->arg, (void *)reply) != 0) {
+			debug("  -> ERROR: Reply callback returned "
+				"nonzero exit status, REJECTING Authentication!");
+			rc = 1;
+			break;
+		}
+	}
+
 	done:
 	if(request)
 		rad_free(&request);

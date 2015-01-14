@@ -5,6 +5,7 @@
 typedef enum {
 	RAD_CB_VALUEPAIRS = 0, /* data: (VALUE_PAIR **) */
 	RAD_CB_CREDENTIALS = 1, /* data: (RADIUS_PACKET *) */
+	RAD_CB_REPLY = 2, /* data: (RADIUS_PACKET *) */
 } rad_cb_action;
 
 typedef enum {
